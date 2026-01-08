@@ -79,10 +79,18 @@ serve(async (req) => {
       }
     }
 
-    console.log(`Total markets fetched: ${allMarkets.length}`);
+    // Filter out expired markets
+    const now = new Date();
+    const activeMarkets = allMarkets.filter(market => {
+      if (!market.expiry) return true; // Keep markets without expiry
+      const expiryDate = new Date(market.expiry);
+      return expiryDate > now;
+    });
 
-    // Process each market
-    for (const market of allMarkets) {
+    console.log(`Total markets fetched: ${allMarkets.length}, active (non-expired): ${activeMarkets.length}`);
+
+    // Process each active market
+    for (const market of activeMarkets) {
       try {
         // Upsert pool
         const { data: poolData, error: poolError } = await supabase
