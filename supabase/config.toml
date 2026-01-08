@@ -1,1 +1,7 @@
 project_id = "wtdfsugadogbrsxoystl"
+
+[functions.fetch-pendle-markets]
+verify_jwt = false
+
+[functions.analyze-alert]
+verify_jwt = false
