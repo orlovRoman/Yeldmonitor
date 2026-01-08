@@ -14,7 +14,133 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      pendle_alerts: {
+        Row: {
+          ai_analysis: string | null
+          alert_type: string
+          change_percent: number | null
+          created_at: string
+          current_value: number | null
+          id: string
+          pool_id: string
+          previous_value: number | null
+          sources: Json | null
+          status: string
+        }
+        Insert: {
+          ai_analysis?: string | null
+          alert_type: string
+          change_percent?: number | null
+          created_at?: string
+          current_value?: number | null
+          id?: string
+          pool_id: string
+          previous_value?: number | null
+          sources?: Json | null
+          status?: string
+        }
+        Update: {
+          ai_analysis?: string | null
+          alert_type?: string
+          change_percent?: number | null
+          created_at?: string
+          current_value?: number | null
+          id?: string
+          pool_id?: string
+          previous_value?: number | null
+          sources?: Json | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pendle_alerts_pool_id_fkey"
+            columns: ["pool_id"]
+            isOneToOne: false
+            referencedRelation: "pendle_pools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pendle_pools: {
+        Row: {
+          chain_id: number
+          created_at: string
+          expiry: string | null
+          id: string
+          market_address: string
+          name: string
+          pt_address: string | null
+          sy_address: string | null
+          underlying_asset: string | null
+          updated_at: string
+          yt_address: string | null
+        }
+        Insert: {
+          chain_id: number
+          created_at?: string
+          expiry?: string | null
+          id?: string
+          market_address: string
+          name: string
+          pt_address?: string | null
+          sy_address?: string | null
+          underlying_asset?: string | null
+          updated_at?: string
+          yt_address?: string | null
+        }
+        Update: {
+          chain_id?: number
+          created_at?: string
+          expiry?: string | null
+          id?: string
+          market_address?: string
+          name?: string
+          pt_address?: string | null
+          sy_address?: string | null
+          underlying_asset?: string | null
+          updated_at?: string
+          yt_address?: string | null
+        }
+        Relationships: []
+      }
+      pendle_rates_history: {
+        Row: {
+          id: string
+          implied_apy: number | null
+          liquidity: number | null
+          pool_id: string
+          recorded_at: string
+          underlying_apy: number | null
+          volume_24h: number | null
+        }
+        Insert: {
+          id?: string
+          implied_apy?: number | null
+          liquidity?: number | null
+          pool_id: string
+          recorded_at?: string
+          underlying_apy?: number | null
+          volume_24h?: number | null
+        }
+        Update: {
+          id?: string
+          implied_apy?: number | null
+          liquidity?: number | null
+          pool_id?: string
+          recorded_at?: string
+          underlying_apy?: number | null
+          volume_24h?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pendle_rates_history_pool_id_fkey"
+            columns: ["pool_id"]
+            isOneToOne: false
+            referencedRelation: "pendle_pools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
