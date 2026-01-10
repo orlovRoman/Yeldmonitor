@@ -6,13 +6,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Supported chains for Pendle
+// Supported chains for Pendle (all available networks)
 const SUPPORTED_CHAINS = [
   { chainId: 1, name: 'Ethereum' },
   { chainId: 42161, name: 'Arbitrum' },
   { chainId: 56, name: 'BNB Chain' },
   { chainId: 10, name: 'Optimism' },
   { chainId: 5000, name: 'Mantle' },
+  { chainId: 8453, name: 'Base' },
+  { chainId: 146, name: 'Sonic' },
+  { chainId: 999, name: 'Hyperliquid' },
+  { chainId: 21000000, name: 'Corn' },
+  { chainId: 80094, name: 'Berachain' },
 ];
 
 const ALERT_THRESHOLD = 0.20; // 20% change threshold

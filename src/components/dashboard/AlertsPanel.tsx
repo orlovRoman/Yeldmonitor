@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, Sparkles, X, ExternalLink, Loader2 } from 'lucide-react';
 import { usePendleAlerts, useAnalyzeAlert, useDismissAlert } from '@/hooks/usePendle';
-import { ALERT_TYPE_LABELS, CHAIN_NAMES } from '@/types/pendle';
+import { ALERT_TYPE_LABELS, ALERT_PARAM_LABELS, CHAIN_NAMES, CHAIN_SLUGS } from '@/types/pendle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -12,6 +12,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+
+const getMarketUrl = (chainId: number, marketAddress: string): string => {
+  const chainSlug = CHAIN_SLUGS[chainId] || 'ethereum';
+  return `https://app.pendle.finance/trade/markets/${marketAddress}/swap?chain=${chainSlug}`;
+};
 
 export function AlertsPanel() {
   const { data: alerts, isLoading } = usePendleAlerts();
@@ -168,7 +173,20 @@ export function AlertsPanel() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-warning" />
-              {selectedAlert?.pendle_pools?.name || 'Детали алерта'}
+              <div className="flex items-center gap-2">
+                <span>{selectedAlert?.pendle_pools?.name || 'Детали алерта'}</span>
+                {selectedAlert?.pendle_pools && (
+                  <a
+                    href={getMarketUrl(selectedAlert.pendle_pools.chain_id, selectedAlert.pendle_pools.market_address)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:text-primary/80 transition-colors"
+                    title="Открыть на Pendle"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                )}
+              </div>
             </DialogTitle>
           </DialogHeader>
 
@@ -182,22 +200,37 @@ export function AlertsPanel() {
                   </p>
                 </div>
                 <div className="p-4 rounded-lg bg-muted">
-                  <p className="text-sm text-muted-foreground">Сеть</p>
-                  <p className="font-medium mt-1">
-                    {CHAIN_NAMES[selectedAlert.pendle_pools?.chain_id || 1]}
-                  </p>
+                  <p className="text-sm text-muted-foreground">Рынок</p>
+                  <div className="font-medium mt-1 flex items-center gap-2">
+                    <span>{CHAIN_NAMES[selectedAlert.pendle_pools?.chain_id || 1]}</span>
+                    {selectedAlert.pendle_pools && (
+                      <a
+                        href={getMarketUrl(selectedAlert.pendle_pools.chain_id, selectedAlert.pendle_pools.market_address)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:text-primary/80 transition-colors"
+                        title="Открыть на Pendle"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="p-4 rounded-lg bg-muted text-center">
-                  <p className="text-sm text-muted-foreground">Было</p>
+                  <p className="text-sm text-muted-foreground">
+                    {ALERT_PARAM_LABELS[selectedAlert.alert_type]?.before || 'Было'}
+                  </p>
                   <p className="text-2xl font-bold mt-1 tabular-nums">
                     {formatPercent(selectedAlert.previous_value)}
                   </p>
                 </div>
                 <div className="p-4 rounded-lg bg-muted text-center">
-                  <p className="text-sm text-muted-foreground">Стало</p>
+                  <p className="text-sm text-muted-foreground">
+                    {ALERT_PARAM_LABELS[selectedAlert.alert_type]?.after || 'Стало'}
+                  </p>
                   <p className="text-2xl font-bold mt-1 tabular-nums text-primary">
                     {formatPercent(selectedAlert.current_value)}
                   </p>

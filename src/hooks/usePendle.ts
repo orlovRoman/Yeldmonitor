@@ -13,9 +13,16 @@ export function usePendlePools() {
 
       if (error) throw error;
 
+      // Filter out expired pools on the frontend as well
+      const now = new Date();
+      const activePools = (pools || []).filter(pool => {
+        if (!pool.expiry) return true;
+        return new Date(pool.expiry) > now;
+      });
+
       // Get latest rates for each pool
       const poolsWithRates = await Promise.all(
-        (pools || []).map(async (pool) => {
+        activePools.map(async (pool) => {
           const { data: rates } = await supabase
             .from('pendle_rates_history')
             .select('*')
