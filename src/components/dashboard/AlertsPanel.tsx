@@ -15,7 +15,16 @@ import { toast } from 'sonner';
 
 const getMarketUrl = (chainId: number, marketAddress: string): string => {
   const chainSlug = CHAIN_SLUGS[chainId] || 'ethereum';
-  return `https://app.pendle.finance/trade/markets/${marketAddress}/swap?chain=${chainSlug}`;
+  return `https://app.pendle.finance/trade/pools/${marketAddress}/yt?chain=${chainSlug}`;
+};
+
+const formatExpiry = (expiry: string | null) => {
+  if (!expiry) return '';
+  return new Date(expiry).toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 };
 
 export function AlertsPanel() {
@@ -192,30 +201,44 @@ export function AlertsPanel() {
 
           {selectedAlert && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-lg bg-muted">
-                  <p className="text-sm text-muted-foreground">Тип события</p>
-                  <p className="font-medium mt-1">
-                    {ALERT_TYPE_LABELS[selectedAlert.alert_type]}
-                  </p>
-                </div>
-                <div className="p-4 rounded-lg bg-muted">
-                  <p className="text-sm text-muted-foreground">Рынок</p>
-                  <div className="font-medium mt-1 flex items-center gap-2">
-                    <span>{CHAIN_NAMES[selectedAlert.pendle_pools?.chain_id || 1]}</span>
-                    {selectedAlert.pendle_pools && (
-                      <a
-                        href={getMarketUrl(selectedAlert.pendle_pools.chain_id, selectedAlert.pendle_pools.market_address)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:text-primary/80 transition-colors"
-                        title="Открыть на Pendle"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-                    )}
+              {/* Рынок: Название, Сеть, Срок, Ссылка */}
+              <div className="p-4 rounded-lg bg-muted">
+                <p className="text-sm text-muted-foreground mb-2">Рынок</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold text-lg">
+                      {selectedAlert.pendle_pools?.name || 'Unknown'}
+                    </p>
+                    <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                      <span>{CHAIN_NAMES[selectedAlert.pendle_pools?.chain_id || 1]}</span>
+                      {selectedAlert.pendle_pools?.expiry && (
+                        <>
+                          <span>•</span>
+                          <span>Экспирация: {formatExpiry(selectedAlert.pendle_pools.expiry)}</span>
+                        </>
+                      )}
+                    </div>
                   </div>
+                  {selectedAlert.pendle_pools && (
+                    <a
+                      href={getMarketUrl(selectedAlert.pendle_pools.chain_id, selectedAlert.pendle_pools.market_address)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Открыть
+                    </a>
+                  )}
                 </div>
+              </div>
+
+              {/* Тип события */}
+              <div className="p-4 rounded-lg bg-muted">
+                <p className="text-sm text-muted-foreground">Тип события</p>
+                <p className="font-medium mt-1">
+                  {ALERT_TYPE_LABELS[selectedAlert.alert_type]}
+                </p>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
