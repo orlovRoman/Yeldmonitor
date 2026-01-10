@@ -15,7 +15,7 @@ import { toast } from 'sonner';
 
 const getMarketUrl = (chainId: number, marketAddress: string): string => {
   const chainSlug = CHAIN_SLUGS[chainId] || 'ethereum';
-  return `https://app.pendle.finance/trade/pools/${marketAddress}/yt?chain=${chainSlug}`;
+  return `https://app.pendle.finance/trade/markets/${marketAddress}/swap?chain=${chainSlug}`;
 };
 
 const formatExpiry = (expiry: string | null) => {
@@ -25,6 +25,12 @@ const formatExpiry = (expiry: string | null) => {
     month: 'short',
     year: 'numeric',
   });
+};
+
+// Helper to get display name (underlying asset or fallback to name)
+const getDisplayName = (pool: { underlying_asset?: string | null; name?: string } | null | undefined) => {
+  if (!pool) return 'Unknown';
+  return pool.underlying_asset || pool.name || 'Unknown';
 };
 
 export function AlertsPanel() {
@@ -117,7 +123,7 @@ export function AlertsPanel() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium truncate">
-                          {alert.pendle_pools?.name || 'Unknown Pool'}
+                          {getDisplayName(alert.pendle_pools)}
                         </span>
                         {alert.status === 'new' && (
                           <Badge className="bg-warning text-warning-foreground text-xs">
@@ -183,7 +189,7 @@ export function AlertsPanel() {
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-warning" />
               <div className="flex items-center gap-2">
-                <span>{selectedAlert?.pendle_pools?.name || 'Детали алерта'}</span>
+                <span>{getDisplayName(selectedAlert?.pendle_pools) || 'Детали алерта'}</span>
                 {selectedAlert?.pendle_pools && (
                   <a
                     href={getMarketUrl(selectedAlert.pendle_pools.chain_id, selectedAlert.pendle_pools.market_address)}
@@ -207,7 +213,7 @@ export function AlertsPanel() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-semibold text-lg">
-                      {selectedAlert.pendle_pools?.name || 'Unknown'}
+                      {getDisplayName(selectedAlert.pendle_pools)}
                     </p>
                     <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
                       <span>{CHAIN_NAMES[selectedAlert.pendle_pools?.chain_id || 1]}</span>
