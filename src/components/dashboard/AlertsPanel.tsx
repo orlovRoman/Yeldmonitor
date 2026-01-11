@@ -114,7 +114,7 @@ export function AlertsPanel() {
             )}
           </div>
         </div>
-        <ScrollArea className="h-[400px]">
+        <ScrollArea className="h-[600px]">
           {activeAlerts.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-center px-4">
               <AlertTriangle className="h-12 w-12 text-muted-foreground mb-4" />
@@ -125,12 +125,19 @@ export function AlertsPanel() {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {activeAlerts.map((alert) => (
+              {activeAlerts.map((alert) => {
+                // Highlight implied APY decrease (negative change on implied_spike)
+                const isImpliedDecrease = 
+                  alert.alert_type === 'implied_spike' && Number(alert.change_percent) < 0;
+                
+                return (
                 <div
                   key={alert.id}
                   onClick={() => setSelectedAlertId(alert.id)}
                   className={`p-4 cursor-pointer transition-colors hover:bg-muted/50 ${
-                    alert.status === 'new' ? 'bg-warning/5' : ''
+                    isImpliedDecrease 
+                      ? 'bg-destructive/10 border-l-4 border-l-destructive' 
+                      : alert.status === 'new' ? 'bg-warning/5' : ''
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -191,7 +198,7 @@ export function AlertsPanel() {
                     </div>
                   )}
                 </div>
-              ))}
+              )})}
             </div>
           )}
         </ScrollArea>
