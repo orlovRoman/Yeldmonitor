@@ -138,18 +138,19 @@ export function useStats() {
   return useQuery({
     queryKey: ['pendle-stats'],
     queryFn: async () => {
-      const [{ count: poolCount }, { count: alertCount }, { data: latestRates }] = await Promise.all([
+      const [{ count: poolCount }, { count: alertCount }, { data: pools }] = await Promise.all([
         supabase.from('pendle_pools').select('*', { count: 'exact', head: true }),
         supabase.from('pendle_alerts').select('*', { count: 'exact', head: true }).eq('status', 'new'),
-        supabase.from('pendle_rates_history').select('liquidity').order('recorded_at', { ascending: false }).limit(100),
+        supabase.from('pendle_pools').select('chain_id'),
       ]);
 
-      const totalLiquidity = (latestRates || []).reduce((sum, r) => sum + Number(r.liquidity || 0), 0);
+      // Count unique networks
+      const uniqueNetworks = new Set((pools || []).map(p => p.chain_id));
 
       return {
         totalPools: poolCount || 0,
         newAlerts: alertCount || 0,
-        totalLiquidity,
+        networkCount: uniqueNetworks.size,
       };
     },
     refetchInterval: 60000,

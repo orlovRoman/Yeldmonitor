@@ -1,15 +1,8 @@
-import { Activity, TrendingUp, AlertTriangle, DollarSign } from 'lucide-react';
+import { Activity, AlertTriangle, Network } from 'lucide-react';
 import { useStats } from '@/hooks/usePendle';
 
 export function StatsCards() {
   const { data: stats, isLoading } = useStats();
-
-  const formatLiquidity = (value: number) => {
-    if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(2)}B`;
-    if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
-    if (value >= 1_000) return `$${(value / 1_000).toFixed(2)}K`;
-    return `$${value.toFixed(2)}`;
-  };
 
   const cards = [
     {
@@ -28,23 +21,16 @@ export function StatsCards() {
       pulse: (stats?.newAlerts || 0) > 0,
     },
     {
-      title: 'Общая ликвидность',
-      value: formatLiquidity(stats?.totalLiquidity || 0),
-      icon: DollarSign,
-      color: 'text-success',
-      bgColor: 'bg-success/10',
-    },
-    {
       title: 'Сетей',
-      value: 5,
-      icon: TrendingUp,
+      value: stats?.networkCount || 0,
+      icon: Network,
       color: 'text-chart-underlying',
       bgColor: 'bg-secondary',
     },
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
       {cards.map((card) => (
         <div
           key={card.title}

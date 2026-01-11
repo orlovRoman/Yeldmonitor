@@ -1,14 +1,11 @@
-import { useState } from 'react';
 import { RefreshCw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StatsCards } from '@/components/dashboard/StatsCards';
-import { PoolsTable } from '@/components/dashboard/PoolsTable';
 import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
 import { useFetchMarkets } from '@/hooks/usePendle';
 import { toast } from 'sonner';
 
 const Index = () => {
-  const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null);
   const fetchMarkets = useFetchMarkets();
 
   const handleRefresh = async () => {
@@ -53,18 +50,7 @@ const Index = () => {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6 space-y-6">
         <StatsCards />
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <PoolsTable
-              onSelectPool={setSelectedPoolId}
-              selectedPoolId={selectedPoolId}
-            />
-          </div>
-          <div className="lg:col-span-1">
-            <AlertsPanel />
-          </div>
-        </div>
+        <AlertsPanel />
       </main>
 
       {/* Footer */}
