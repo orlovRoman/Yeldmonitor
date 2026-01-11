@@ -185,16 +185,28 @@ serve(async (req) => {
         }
 
         // Check yield divergence (underlying > implied significantly)
+        // Only create alert if no recent yield_divergence alert exists for this pool (within 24 hours)
         if (impliedApy > 0 && underlyingApy > impliedApy * 1.2) {
-          alerts.push({
-            pool_id: poolId,
-            alert_type: 'yield_divergence',
-            previous_value: impliedApy,
-            current_value: underlyingApy,
-            change_percent: ((underlyingApy - impliedApy) / impliedApy) * 100,
-            pool_name: market.name,
-            chain_name: market.chainName,
-          });
+          const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+          const { data: existingDivergence } = await supabase
+            .from('pendle_alerts')
+            .select('id')
+            .eq('pool_id', poolId)
+            .eq('alert_type', 'yield_divergence')
+            .gte('created_at', twentyFourHoursAgo)
+            .limit(1);
+          
+          if (!existingDivergence || existingDivergence.length === 0) {
+            alerts.push({
+              pool_id: poolId,
+              alert_type: 'yield_divergence',
+              previous_value: impliedApy,
+              current_value: underlyingApy,
+              change_percent: ((underlyingApy - impliedApy) / impliedApy) * 100,
+              pool_name: market.name,
+              chain_name: market.chainName,
+            });
+          }
         }
 
       } catch (error) {
