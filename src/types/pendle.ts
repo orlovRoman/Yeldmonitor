@@ -79,9 +79,30 @@ export const CHAIN_SLUGS: Record<number, string> = {
   80094: 'berachain',
 };
 
+// Helper to get direction label based on change
+export const getDirectionLabel = (changePercent: number): string => {
+  return changePercent >= 0 ? 'Рост' : 'Падение';
+};
+
+export const ALERT_TYPE_LABELS_BASE: Record<string, string> = {
+  'implied_spike': 'Implied APY (YT)',
+  'underlying_spike': 'Underlying APY',
+  'yield_divergence': 'Расхождение Implied vs Underlying',
+};
+
+export const getAlertTypeLabel = (alertType: string, changePercent: number | null): string => {
+  if (alertType === 'yield_divergence') {
+    return 'Расхождение Implied vs Underlying';
+  }
+  const direction = changePercent !== null ? getDirectionLabel(changePercent) : 'Изменение';
+  const base = ALERT_TYPE_LABELS_BASE[alertType] || alertType;
+  return `${direction} ${base}`;
+};
+
+// Legacy export for compatibility
 export const ALERT_TYPE_LABELS: Record<string, string> = {
-  'implied_spike': 'Скачок Implied APY (YT)',
-  'underlying_spike': 'Скачок Underlying APY',
+  'implied_spike': 'Изменение Implied APY (YT)',
+  'underlying_spike': 'Изменение Underlying APY',
   'yield_divergence': 'Расхождение Implied vs Underlying',
 };
 

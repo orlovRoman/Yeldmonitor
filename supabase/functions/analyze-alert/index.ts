@@ -50,18 +50,25 @@ serve(async (req) => {
     }
 
     const pool = alert.pendle_pools;
+    
+    // Determine direction
+    const changePercent = Number(alert.change_percent);
+    const direction = changePercent >= 0 ? 'рост' : 'падение';
+    
     const alertTypeLabels: Record<string, string> = {
-      'implied_spike': 'резкое изменение подразумеваемой доходности',
-      'underlying_spike': 'резкое изменение фактической доходности',
-      'yield_divergence': 'превышение фактической доходности над подразумеваемой',
+      'implied_spike': `${direction} подразумеваемой доходности (Implied APY)`,
+      'underlying_spike': `${direction} фактической доходности (Underlying APY)`,
+      'yield_divergence': 'расхождение между фактической и подразумеваемой доходностью',
     };
 
-    // Build search query for Perplexity
-    const searchQuery = `Pendle Finance ${pool.underlying_asset || pool.name} yield APY change DeFi news today. What could cause ${alertTypeLabels[alert.alert_type] || 'yield change'} in Pendle ${pool.name}? Check Twitter, Discord, crypto news.`;
+    const underlyingAsset = pool.underlying_asset || pool.name;
+
+    // Build search query for Perplexity with more specific DeFi news sources
+    const searchQuery = `${underlyingAsset} DeFi yield APY ${direction} news today site:twitter.com OR site:x.com OR site:medium.com OR site:defillama.com`;
 
     console.log('Searching with Perplexity:', searchQuery);
 
-    // Call Perplexity API
+    // Call Perplexity API with improved prompt
     const perplexityResponse = await fetch('https://api.perplexity.ai/chat/completions', {
       method: 'POST',
       headers: {
@@ -73,26 +80,29 @@ serve(async (req) => {
         messages: [
           {
             role: 'system',
-            content: `Ты аналитик DeFi. Твоя задача - найти причину резкого изменения доходности в пуле Pendle Finance. 
-Отвечай на русском языке. Будь кратким и конкретным.
+            content: `Ты аналитик DeFi. Твоя задача - найти причину изменения доходности в пуле Pendle Finance.
+Отвечай на русском языке. Будь кратким и конкретным (максимум 200 слов).
 Укажи:
-1. Вероятную причину изменения
-2. Источники информации (Twitter, Discord, новости)
-3. Рекомендации по действиям`
+1. Вероятную причину изменения (протокольные обновления, изменение эмиссии, рыночные условия, действия крупных игроков)
+2. Если нашёл конкретные источники - укажи их
+3. Краткие рекомендации по действиям
+
+Если не можешь найти конкретную причину, предположи наиболее вероятные сценарии на основе типа актива и текущих рыночных условий.`
           },
           {
             role: 'user',
             content: `Пул: ${pool.name}
-Актив: ${pool.underlying_asset || 'Unknown'}
+Актив: ${underlyingAsset}
+Сеть: ${pool.chain_id === 1 ? 'Ethereum' : pool.chain_id === 42161 ? 'Arbitrum' : pool.chain_id === 999 ? 'Hyperliquid' : 'другая'}
 Тип события: ${alertTypeLabels[alert.alert_type]}
 Предыдущее значение: ${(Number(alert.previous_value) * 100).toFixed(2)}%
 Текущее значение: ${(Number(alert.current_value) * 100).toFixed(2)}%
-Изменение: ${Number(alert.change_percent).toFixed(2)}%
+Изменение: ${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%
 
-Найди причину этого изменения в последних новостях и социальных сетях.`
+Найди причину этого ${direction}а доходности. Проверь последние новости о ${underlyingAsset}, изменения в протоколах, крупные транзакции.`
           }
         ],
-        search_recency_filter: 'day',
+        search_recency_filter: 'week',
       }),
     });
 

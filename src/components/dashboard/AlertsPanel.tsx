@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { AlertTriangle, Sparkles, X, ExternalLink, Loader2 } from 'lucide-react';
+import { AlertTriangle, Sparkles, X, ExternalLink, Loader2, Copy, Check } from 'lucide-react';
 import { usePendleAlerts, useAnalyzeAlert, useDismissAlert } from '@/hooks/usePendle';
-import { ALERT_TYPE_LABELS, ALERT_PARAM_LABELS, CHAIN_NAMES, CHAIN_SLUGS } from '@/types/pendle';
+import { getAlertTypeLabel, ALERT_PARAM_LABELS, CHAIN_NAMES, CHAIN_SLUGS } from '@/types/pendle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -13,9 +13,11 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
+// Pendle URL - opens in new tab directly
 const getMarketUrl = (chainId: number, marketAddress: string): string => {
   const chainSlug = CHAIN_SLUGS[chainId] || 'ethereum';
-  return `https://app.pendle.finance/trade/markets/${marketAddress}/swap?chain=${chainSlug}`;
+  // Using simple market format that works
+  return `https://app.pendle.finance/trade/markets/${marketAddress}?chain=${chainSlug}`;
 };
 
 const formatExpiry = (expiry: string | null) => {
@@ -38,6 +40,7 @@ export function AlertsPanel() {
   const analyzeAlert = useAnalyzeAlert();
   const dismissAlert = useDismissAlert();
   const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
   const selectedAlert = alerts?.find((a) => a.id === selectedAlertId);
 
@@ -71,6 +74,17 @@ export function AlertsPanel() {
     } catch (error) {
       toast.error('Ошибка');
       console.error(error);
+    }
+  };
+
+  const handleCopyUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedUrl(true);
+      toast.success('Ссылка скопирована');
+      setTimeout(() => setCopiedUrl(false), 2000);
+    } catch (error) {
+      toast.error('Ошибка копирования');
     }
   };
 
@@ -132,7 +146,7 @@ export function AlertsPanel() {
                         )}
                       </div>
                       <p className="text-sm text-muted-foreground mt-1">
-                        {ALERT_TYPE_LABELS[alert.alert_type]}
+                        {getAlertTypeLabel(alert.alert_type, alert.change_percent)}
                       </p>
                       <div className="flex items-center gap-2 mt-2 text-sm">
                         <span className="text-muted-foreground">
@@ -226,24 +240,34 @@ export function AlertsPanel() {
                     </div>
                   </div>
                   {selectedAlert.pendle_pools && (
-                    <a
-                      href={getMarketUrl(selectedAlert.pendle_pools.chain_id, selectedAlert.pendle_pools.market_address)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Открыть
-                    </a>
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={getMarketUrl(selectedAlert.pendle_pools.chain_id, selectedAlert.pendle_pools.market_address)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Открыть
+                      </a>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleCopyUrl(getMarketUrl(selectedAlert.pendle_pools!.chain_id, selectedAlert.pendle_pools!.market_address))}
+                        className="gap-1.5"
+                      >
+                        {copiedUrl ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        {copiedUrl ? 'Скопировано' : 'Копировать'}
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>
 
-              {/* Тип события */}
               <div className="p-4 rounded-lg bg-muted">
                 <p className="text-sm text-muted-foreground">Тип события</p>
                 <p className="font-medium mt-1">
-                  {ALERT_TYPE_LABELS[selectedAlert.alert_type]}
+                  {getAlertTypeLabel(selectedAlert.alert_type, selectedAlert.change_percent)}
                 </p>
               </div>
 
