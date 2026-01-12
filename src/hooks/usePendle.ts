@@ -156,3 +156,43 @@ export function useStats() {
     refetchInterval: 60000,
   });
 }
+
+// Hook to fetch new pools (added in the last 24 hours)
+export function useNewPools() {
+  return useQuery({
+    queryKey: ['new-pools'],
+    queryFn: async () => {
+      const oneDayAgo = new Date();
+      oneDayAgo.setHours(oneDayAgo.getHours() - 24);
+
+      const { data: pools, error } = await supabase
+        .from('pendle_pools')
+        .select('*')
+        .gte('created_at', oneDayAgo.toISOString())
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Get latest rates for liquidity
+      const poolsWithRates = await Promise.all(
+        (pools || []).map(async (pool) => {
+          const { data: rates } = await supabase
+            .from('pendle_rates_history')
+            .select('liquidity')
+            .eq('pool_id', pool.id)
+            .order('recorded_at', { ascending: false })
+            .limit(1)
+            .single();
+
+          return {
+            ...pool,
+            liquidity: rates?.liquidity || null,
+          };
+        })
+      );
+
+      return poolsWithRates;
+    },
+    refetchInterval: 60000,
+  });
+}
