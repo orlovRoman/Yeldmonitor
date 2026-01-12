@@ -20,7 +20,8 @@ const SUPPORTED_CHAINS = [
   { chainId: 80094, name: 'Berachain' },
 ];
 
-const ALERT_THRESHOLD = 0.20; // 20% change threshold
+const ALERT_THRESHOLD = 0.20; // 20% change threshold for underlying APY
+const IMPLIED_APY_THRESHOLD = 0.01; // 1% change threshold for implied APY
 
 interface PendleMarket {
   address: string;
@@ -151,16 +152,16 @@ serve(async (req) => {
           const prevImplied = Number(prevRate.implied_apy) || 0;
           const prevUnderlying = Number(prevRate.underlying_apy) || 0;
 
-          // Check implied APY spike
+          // Check implied APY spike (1% threshold)
           if (prevImplied > 0) {
-            const impliedChange = Math.abs((impliedApy - prevImplied) / prevImplied);
-            if (impliedChange >= ALERT_THRESHOLD) {
+            const impliedChange = (impliedApy - prevImplied) / prevImplied;
+            if (Math.abs(impliedChange) >= IMPLIED_APY_THRESHOLD) {
               alerts.push({
                 pool_id: poolId,
                 alert_type: 'implied_spike',
                 previous_value: prevImplied,
                 current_value: impliedApy,
-                change_percent: impliedChange * 100,
+                change_percent: impliedChange * 100, // Keep sign for direction
                 pool_name: market.name,
                 chain_name: market.chainName,
               });
