@@ -37,9 +37,37 @@ interface PendleMarket {
   tradingVolume: { usd: number };
 }
 
+// Verify API key for scheduled job access
+function verifyApiKey(req: Request): boolean {
+  const authHeader = req.headers.get('Authorization');
+  const expectedKey = Deno.env.get('PENDLE_CRON_API_KEY');
+  
+  if (!expectedKey) {
+    // If no key is set, allow access (for backwards compatibility during setup)
+    console.warn('PENDLE_CRON_API_KEY not set - allowing unauthenticated access');
+    return true;
+  }
+  
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return false;
+  }
+  
+  const providedKey = authHeader.replace('Bearer ', '');
+  return providedKey === expectedKey;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Verify API key for cron job access
+  if (!verifyApiKey(req)) {
+    console.error('Unauthorized access attempt to fetch-pendle-markets');
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   try {
