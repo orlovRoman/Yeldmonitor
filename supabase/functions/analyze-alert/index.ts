@@ -47,6 +47,16 @@ serve(async (req) => {
     
     console.log('Authenticated user:', claimsData.claims.sub);
     
+    // Parse request body
+    const { alertId } = await req.json();
+    
+    if (!alertId || !UUID_REGEX.test(alertId)) {
+      return new Response(JSON.stringify({ error: 'Valid alertId is required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
     // Use service role client for database operations
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
