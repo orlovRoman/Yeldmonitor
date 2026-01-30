@@ -35,6 +35,25 @@ const getDisplayName = (pool: { underlying_asset?: string | null; name?: string 
   return pool.underlying_asset || pool.name || 'Unknown';
 };
 
+// Validate that URL is a safe http/https URL to prevent XSS via javascript: or data: URLs
+const isValidHttpUrl = (urlString: string): boolean => {
+  try {
+    const url = new URL(urlString);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+// Safely get hostname from URL string
+const getSafeHostname = (urlString: string): string => {
+  try {
+    return new URL(urlString).hostname;
+  } catch {
+    return 'unknown';
+  }
+};
+
 export function AlertsPanel() {
   const { data: alerts, isLoading } = usePendleAlerts();
   const analyzeAlert = useAnalyzeAlert();
@@ -322,18 +341,22 @@ export function AlertsPanel() {
                     <div className="mt-4 pt-4 border-t border-border">
                       <p className="text-sm font-medium mb-2">Источники:</p>
                       <div className="flex flex-wrap gap-2">
-                        {selectedAlert.sources.map((source, i) => (
-                          <a
-                            key={i}
-                            href={source}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                          >
-                            <ExternalLink className="h-3 w-3" />
-                            {new URL(source).hostname}
-                          </a>
-                        ))}
+                        {selectedAlert.sources
+                          .filter((source): source is string => 
+                            typeof source === 'string' && isValidHttpUrl(source)
+                          )
+                          .map((source, i) => (
+                            <a
+                              key={i}
+                              href={source}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              {getSafeHostname(source)}
+                            </a>
+                          ))}
                       </div>
                     </div>
                   )}
