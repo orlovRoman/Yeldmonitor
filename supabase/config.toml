@@ -4,4 +4,4 @@ project_id = "wtdfsugadogbrsxoystl"
 verify_jwt = false
 
 [functions.analyze-alert]
-verify_jwt = false
+verify_jwt = true
