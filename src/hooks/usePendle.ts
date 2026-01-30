@@ -122,11 +122,11 @@ export function useDismissAlert() {
 
   return useMutation({
     mutationFn: async (alertId: string) => {
-      const { error } = await supabase
-        .from('pendle_alerts')
-        .update({ status: 'dismissed' })
-        .eq('id', alertId);
+      const { data, error } = await supabase.functions.invoke('dismiss-alert', {
+        body: { alertId },
+      });
       if (error) throw error;
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pendle-alerts'] });
