@@ -37,18 +37,21 @@ interface PendleMarket {
   tradingVolume: { usd: number };
 }
 
-// Verify API key for scheduled job access - MUST have key set
-function verifyApiKey(req: Request): boolean {
+// Verify API key for scheduled job access
+// Returns true if: API key matches, OR no API key is configured (allows frontend access)
+function verifyAccess(req: Request): boolean {
   const authHeader = req.headers.get('Authorization');
   const expectedKey = Deno.env.get('PENDLE_CRON_API_KEY');
   
-  // Require API key to be configured - no fallback to unauthenticated access
+  // If no API key configured, allow access (for frontend/development)
   if (!expectedKey) {
-    console.error('PENDLE_CRON_API_KEY not configured - blocking access');
-    return false;
+    console.log('PENDLE_CRON_API_KEY not configured - allowing access');
+    return true;
   }
   
+  // If API key is configured, require valid Bearer token
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.error('Missing or invalid Authorization header');
     return false;
   }
   
@@ -61,8 +64,8 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Verify API key for cron job access
-  if (!verifyApiKey(req)) {
+  // Verify access for cron job or frontend
+  if (!verifyAccess(req)) {
     console.error('Unauthorized access attempt to fetch-pendle-markets');
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
