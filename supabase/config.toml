@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.analyze-alert]
 verify_jwt = true
+
+[functions.dismiss-alert]
+verify_jwt = true
