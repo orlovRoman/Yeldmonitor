@@ -37,15 +37,15 @@ interface PendleMarket {
   tradingVolume: { usd: number };
 }
 
-// Verify API key for scheduled job access
+// Verify API key for scheduled job access - MUST have key set
 function verifyApiKey(req: Request): boolean {
   const authHeader = req.headers.get('Authorization');
   const expectedKey = Deno.env.get('PENDLE_CRON_API_KEY');
   
+  // Require API key to be configured - no fallback to unauthenticated access
   if (!expectedKey) {
-    // If no key is set, allow access (for backwards compatibility during setup)
-    console.warn('PENDLE_CRON_API_KEY not set - allowing unauthenticated access');
-    return true;
+    console.error('PENDLE_CRON_API_KEY not configured - blocking access');
+    return false;
   }
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
