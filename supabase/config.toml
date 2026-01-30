@@ -4,7 +4,7 @@ project_id = "wtdfsugadogbrsxoystl"
 verify_jwt = false
 
 [functions.analyze-alert]
-verify_jwt = true
+verify_jwt = false
 
 [functions.dismiss-alert]
-verify_jwt = true
+verify_jwt = false
