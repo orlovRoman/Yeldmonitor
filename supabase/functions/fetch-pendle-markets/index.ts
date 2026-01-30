@@ -268,9 +268,10 @@ serve(async (req) => {
     });
 
   } catch (error) {
+    // Log detailed error server-side only
     console.error('Error in fetch-pendle-markets:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: errorMessage }), {
+    // Return generic error message to client
+    return new Response(JSON.stringify({ error: 'An error occurred processing your request' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

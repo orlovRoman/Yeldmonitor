@@ -141,8 +141,9 @@ serve(async (req) => {
 
     if (!perplexityResponse.ok) {
       const errorText = await perplexityResponse.text();
+      // Log detailed error server-side only
       console.error('Perplexity API error:', errorText);
-      throw new Error(`Perplexity API error: ${perplexityResponse.status}`);
+      throw new Error('External service unavailable');
     }
 
     const perplexityData = await perplexityResponse.json();
@@ -174,9 +175,10 @@ serve(async (req) => {
     });
 
   } catch (error) {
+    // Log detailed error server-side only
     console.error('Error in analyze-alert:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: errorMessage }), {
+    // Return generic error message to client
+    return new Response(JSON.stringify({ error: 'An error occurred processing your request' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
