@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TrendingDown, ArrowUpDown, ExternalLink } from 'lucide-react';
 import { usePendleAlerts } from '@/hooks/usePendle';
 import { CHAIN_NAMES, CHAIN_SLUGS } from '@/types/pendle';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { supabase } from '@/integrations/supabase/client';
 import {
   Select,
   SelectContent,
@@ -25,9 +25,14 @@ const getDisplayName = (pool: { underlying_asset?: string | null; name?: string 
 
 type SortBy = 'change' | 'time' | 'apy';
 
+interface UnderlyingApyData {
+  [poolId: string]: number | null;
+}
+
 export function ImpliedDropsPanel() {
   const { data: alerts, isLoading } = usePendleAlerts();
   const [sortBy, setSortBy] = useState<SortBy>('change');
+  const [underlyingApyMap, setUnderlyingApyMap] = useState<UnderlyingApyData>({});
 
   const formatPercent = (value: number | null | undefined) => {
     if (value === null || value === undefined) return '—';
@@ -65,6 +70,32 @@ export function ImpliedDropsPanel() {
           return 0;
       }
     });
+
+  // Fetch underlying APY for each pool in the drops list
+  useEffect(() => {
+    const fetchUnderlyingApy = async () => {
+      if (impliedDrops.length === 0) return;
+      
+      const poolIds = [...new Set(impliedDrops.map(a => a.pool_id))];
+      const apyMap: UnderlyingApyData = {};
+      
+      for (const poolId of poolIds) {
+        const { data } = await supabase
+          .from('pendle_rates_history')
+          .select('underlying_apy')
+          .eq('pool_id', poolId)
+          .order('recorded_at', { ascending: false })
+          .limit(1)
+          .single();
+        
+        apyMap[poolId] = data?.underlying_apy ?? null;
+      }
+      
+      setUnderlyingApyMap(apyMap);
+    };
+    
+    fetchUnderlyingApy();
+  }, [alerts]);
 
   if (isLoading) {
     return (
@@ -113,59 +144,70 @@ export function ImpliedDropsPanel() {
           </div>
         ) : (
           <div className="divide-y divide-border">
-            {impliedDrops.map((alert) => (
-              <div
-                key={alert.id}
-                className="p-4 bg-destructive/5 hover:bg-destructive/10 transition-colors"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium truncate">
-                        {getDisplayName(alert.pendle_pools)}
-                      </span>
-                      <Badge variant="outline" className="text-xs">
-                        {CHAIN_NAMES[alert.pendle_pools?.chain_id || 1]}
-                      </Badge>
+            {impliedDrops.map((alert) => {
+              const underlyingApy = underlyingApyMap[alert.pool_id];
+              
+              return (
+                <div
+                  key={alert.id}
+                  className="p-4 bg-destructive/5 hover:bg-destructive/10 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium truncate">
+                          {getDisplayName(alert.pendle_pools)}
+                        </span>
+                        <Badge variant="outline" className="text-xs">
+                          {CHAIN_NAMES[alert.pendle_pools?.chain_id || 1]}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-3 mt-2 text-sm">
+                        <span className="text-muted-foreground">
+                          {formatPercent(alert.previous_value)}
+                        </span>
+                        <span className="text-muted-foreground">→</span>
+                        <span className="text-destructive font-medium">
+                          {formatPercent(alert.current_value)}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className="border-destructive text-destructive font-bold"
+                        >
+                          {formatChange(alert.change_percent)}
+                        </Badge>
+                      </div>
+                      {/* Underlying APY */}
+                      <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                        <span>Underlying APY:</span>
+                        <span className="font-medium text-foreground">
+                          {formatPercent(underlyingApy)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 mt-2 text-sm">
-                      <span className="text-muted-foreground">
-                        {formatPercent(alert.previous_value)}
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {new Date(alert.created_at).toLocaleString('ru-RU', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
                       </span>
-                      <span className="text-muted-foreground">→</span>
-                      <span className="text-destructive font-medium">
-                        {formatPercent(alert.current_value)}
-                      </span>
-                      <Badge
-                        variant="outline"
-                        className="border-destructive text-destructive font-bold"
-                      >
-                        {formatChange(alert.change_percent)}
-                      </Badge>
+                      {alert.pendle_pools && (
+                        <a
+                          href={getMarketUrl(alert.pendle_pools.chain_id, alert.pendle_pools.market_address)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 rounded-md hover:bg-muted transition-colors"
+                          title="Открыть на Pendle"
+                        >
+                          <ExternalLink className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                        </a>
+                      )}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">
-                      {new Date(alert.created_at).toLocaleString('ru-RU', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                    {alert.pendle_pools && (
-                      <a
-                        href={getMarketUrl(alert.pendle_pools.chain_id, alert.pendle_pools.market_address)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1.5 rounded-md hover:bg-muted transition-colors"
-                        title="Открыть на Pendle"
-                      >
-                        <ExternalLink className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-                      </a>
-                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </ScrollArea>
