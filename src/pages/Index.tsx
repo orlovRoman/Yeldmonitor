@@ -1,6 +1,7 @@
 import { RefreshCw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StatsCards } from '@/components/dashboard/StatsCards';
+import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
 import { NewPoolsPanel } from '@/components/dashboard/NewPoolsPanel';
 import { ImpliedDropsPanel } from '@/components/dashboard/ImpliedDropsPanel';
 import { useFetchMarkets } from '@/hooks/usePendle';
@@ -51,7 +52,8 @@ const Index = () => {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6 space-y-6">
         <StatsCards />
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <AlertsPanel />
           <ImpliedDropsPanel />
           <NewPoolsPanel />
         </div>
