@@ -51,6 +51,9 @@ export const CHAIN_NAMES: Record<number, string> = {
   999: 'Hyperliquid',
   21000000: 'Corn',
   80094: 'Berachain',
+  14: 'Flare',
+  43114: 'Avalanche',
+  747474: 'Katana',
 };
 
 export const CHAIN_COLORS: Record<number, string> = {
@@ -64,6 +67,9 @@ export const CHAIN_COLORS: Record<number, string> = {
   999: '#50D5FF',
   21000000: '#FFD700',
   80094: '#FF6B35',
+  14: '#E62058',
+  43114: '#E84142',
+  747474: '#8B5CF6',
 };
 
 export const CHAIN_SLUGS: Record<number, string> = {
@@ -77,6 +83,9 @@ export const CHAIN_SLUGS: Record<number, string> = {
   999: 'hyperliquid',
   21000000: 'corn',
   80094: 'berachain',
+  14: 'flare',
+  43114: 'avalanche',
+  747474: 'katana',
 };
 
 // Helper to get direction label based on change

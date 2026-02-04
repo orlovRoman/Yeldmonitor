@@ -100,6 +100,22 @@ export function useFetchMarkets() {
   });
 }
 
+export function useFetchSpectraMarkets() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('fetch-spectra-markets');
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pendle-pools'] });
+      queryClient.invalidateQueries({ queryKey: ['new-pools'] });
+    },
+  });
+}
+
 export function useAnalyzeAlert() {
   const queryClient = useQueryClient();
 

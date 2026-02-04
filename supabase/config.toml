@@ -8,3 +8,9 @@ verify_jwt = false
 
 [functions.dismiss-alert]
 verify_jwt = false
+
+[functions.firecrawl-scrape]
+verify_jwt = false
+
+[functions.fetch-spectra-markets]
+verify_jwt = false
