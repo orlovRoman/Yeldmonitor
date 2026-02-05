@@ -88,6 +88,48 @@ export const CHAIN_SLUGS: Record<number, string> = {
   747474: 'katana',
 };
 
+// Spectra chain slugs for URL generation
+export const SPECTRA_CHAIN_SLUGS: Record<number, string> = {
+  1: 'eth',
+  42161: 'arbitrum',
+  10: 'op',
+  8453: 'base',
+  146: 'sonic',
+  43114: 'avax',
+  56: 'bsc',
+  14: 'flare',
+  747474: 'katana',
+  999: 'hyperevm',
+};
+
+// Helper to check if a pool is from Spectra
+export const isSpectraPool = (pool: { name?: string; market_address?: string } | null | undefined): boolean => {
+  if (!pool) return false;
+  return pool.name?.startsWith('[Spectra]') || pool.market_address?.startsWith('spectra-') || false;
+};
+
+// Helper to get platform name
+export const getPlatformName = (pool: { name?: string; market_address?: string } | null | undefined): 'Spectra' | 'Pendle' => {
+  return isSpectraPool(pool) ? 'Spectra' : 'Pendle';
+};
+
+// Helper to get market URL based on platform
+export const getMarketUrl = (pool: { chain_id: number; market_address: string; name?: string } | null | undefined): string => {
+  if (!pool) return '#';
+  
+  if (isSpectraPool(pool)) {
+    // Spectra URL format: https://app.spectra.finance/pools/{chain}:{address}
+    const chainSlug = SPECTRA_CHAIN_SLUGS[pool.chain_id] || 'eth';
+    // Extract original pool address from spectra-{chainId}-{name} format
+    const addressPart = pool.market_address.replace(/^spectra-\d+-/, '');
+    return `https://app.spectra.finance/pools/${chainSlug}:${addressPart}`;
+  } else {
+    // Pendle URL format
+    const chainSlug = CHAIN_SLUGS[pool.chain_id] || 'ethereum';
+    return `https://app.pendle.finance/trade/markets/${pool.market_address}?chain=${chainSlug}`;
+  }
+};
+
 // Helper to get direction label based on change
 export const getDirectionLabel = (changePercent: number): string => {
   return changePercent >= 0 ? 'Рост' : 'Падение';

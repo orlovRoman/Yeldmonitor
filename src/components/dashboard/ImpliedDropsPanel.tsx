@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { TrendingDown, ArrowUpDown, ExternalLink } from 'lucide-react';
 import { usePendleAlerts } from '@/hooks/usePendle';
-import { CHAIN_NAMES, CHAIN_SLUGS } from '@/types/pendle';
+import { CHAIN_NAMES, getPlatformName, getMarketUrl, isSpectraPool } from '@/types/pendle';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
@@ -12,11 +12,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-
-const getMarketUrl = (chainId: number, marketAddress: string): string => {
-  const chainSlug = CHAIN_SLUGS[chainId] || 'ethereum';
-  return `https://app.pendle.finance/trade/markets/${marketAddress}?chain=${chainSlug}`;
-};
 
 const getDisplayName = (pool: { underlying_asset?: string | null; name?: string } | null | undefined) => {
   if (!pool) return 'Unknown';
@@ -158,6 +153,12 @@ export function ImpliedDropsPanel() {
                         <span className="font-medium truncate">
                           {getDisplayName(alert.pendle_pools)}
                         </span>
+                        <Badge 
+                          variant="outline" 
+                          className={`text-xs ${isSpectraPool(alert.pendle_pools) ? 'border-purple-500 text-purple-500' : 'border-primary text-primary'}`}
+                        >
+                          {getPlatformName(alert.pendle_pools)}
+                        </Badge>
                         <Badge variant="outline" className="text-xs">
                           {CHAIN_NAMES[alert.pendle_pools?.chain_id || 1]}
                         </Badge>
@@ -194,11 +195,11 @@ export function ImpliedDropsPanel() {
                       </span>
                       {alert.pendle_pools && (
                         <a
-                          href={getMarketUrl(alert.pendle_pools.chain_id, alert.pendle_pools.market_address)}
+                          href={getMarketUrl(alert.pendle_pools)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="p-1.5 rounded-md hover:bg-muted transition-colors"
-                          title="Открыть на Pendle"
+                          title={`Открыть на ${getPlatformName(alert.pendle_pools)}`}
                         >
                           <ExternalLink className="h-4 w-4 text-muted-foreground hover:text-foreground" />
                         </a>
