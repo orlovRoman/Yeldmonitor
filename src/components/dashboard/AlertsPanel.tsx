@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, Sparkles, X, ExternalLink, Loader2, Copy, Check } from 'lucide-react';
 import { usePendleAlerts, useAnalyzeAlert, useDismissAlert } from '@/hooks/usePendle';
-import { getAlertTypeLabel, ALERT_PARAM_LABELS, CHAIN_NAMES, CHAIN_SLUGS } from '@/types/pendle';
+import { getAlertTypeLabel, ALERT_PARAM_LABELS, CHAIN_NAMES, getPlatformName, getMarketUrl, isSpectraPool } from '@/types/pendle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -12,13 +12,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-
-// Pendle URL - opens in new tab directly
-const getMarketUrl = (chainId: number, marketAddress: string): string => {
-  const chainSlug = CHAIN_SLUGS[chainId] || 'ethereum';
-  // Using simple market format that works
-  return `https://app.pendle.finance/trade/markets/${marketAddress}?chain=${chainSlug}`;
-};
 
 const formatExpiry = (expiry: string | null) => {
   if (!expiry) return '';
@@ -165,6 +158,12 @@ export function AlertsPanel() {
                         <span className="font-medium truncate">
                           {getDisplayName(alert.pendle_pools)}
                         </span>
+                        <Badge 
+                          variant="outline" 
+                          className={`text-xs ${isSpectraPool(alert.pendle_pools) ? 'border-purple-500 text-purple-500' : 'border-primary text-primary'}`}
+                        >
+                          {getPlatformName(alert.pendle_pools)}
+                        </Badge>
                         {alert.status === 'new' && (
                           <Badge className="bg-warning text-warning-foreground text-xs">
                             Новый
@@ -231,15 +230,23 @@ export function AlertsPanel() {
               <div className="flex items-center gap-2">
                 <span>{getDisplayName(selectedAlert?.pendle_pools) || 'Детали алерта'}</span>
                 {selectedAlert?.pendle_pools && (
+                  <>
+                    <Badge 
+                      variant="outline" 
+                      className={`text-xs ${isSpectraPool(selectedAlert.pendle_pools) ? 'border-purple-500 text-purple-500' : 'border-primary text-primary'}`}
+                    >
+                      {getPlatformName(selectedAlert.pendle_pools)}
+                    </Badge>
                   <a
-                    href={getMarketUrl(selectedAlert.pendle_pools.chain_id, selectedAlert.pendle_pools.market_address)}
+                      href={getMarketUrl(selectedAlert.pendle_pools)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary hover:text-primary/80 transition-colors"
-                    title="Открыть на Pendle"
+                      title={`Открыть на ${getPlatformName(selectedAlert.pendle_pools)}`}
                   >
                     <ExternalLink className="h-4 w-4" />
                   </a>
+                  </>
                 )}
               </div>
             </DialogTitle>
@@ -268,18 +275,18 @@ export function AlertsPanel() {
                   {selectedAlert.pendle_pools && (
                     <div className="flex items-center gap-2">
                       <a
-                        href={getMarketUrl(selectedAlert.pendle_pools.chain_id, selectedAlert.pendle_pools.market_address)}
+                        href={getMarketUrl(selectedAlert.pendle_pools)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm"
                       >
                         <ExternalLink className="h-3.5 w-3.5" />
-                        Открыть
+                        Открыть на {getPlatformName(selectedAlert.pendle_pools)}
                       </a>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleCopyUrl(getMarketUrl(selectedAlert.pendle_pools!.chain_id, selectedAlert.pendle_pools!.market_address))}
+                        onClick={() => handleCopyUrl(getMarketUrl(selectedAlert.pendle_pools!))}
                         className="gap-1.5"
                       >
                         {copiedUrl ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}

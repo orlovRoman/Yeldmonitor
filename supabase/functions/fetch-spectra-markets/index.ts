@@ -36,138 +36,105 @@ interface SpectraPool {
 // Parse pool data from Firecrawl markdown
 function parseSpectraPools(markdown: string): SpectraPool[] {
   const pools: SpectraPool[] = [];
-  
-  // The pools are in markdown links format: [![ChainName]...pool data...](pool_url)
-  // Pattern: [![ChainName](chain_img)...name...Max APY...XX%...Liquidity...$X...Expiry...Date...\n\n![chainId]...](pool_url)
-  
-  // Split by pool link pattern - each pool ends with a URL like ](https://app.spectra.finance/pools/chain:address)
-  const poolRegex = /\[!\[([\w\s]+)\][^\]]*\]\([^\)]+\)[^[]*?([\w\-\/]+)[^[]*?Max APY[^[]*?([\d.]+%?\+?)[^[]*?Interest-Bearing Token[^[]*?Liquidity[^[]*?\$([\d,]+)[^[]*?Expiry[^[]*?([A-Z][a-z]+ \d{1,2} \d{4})[^[]*?\]\(https:\/\/app\.spectra\.finance\/pools\/([\w]+):(0x[a-f0-9]+)\)/gi;
-  
-  let match;
-  while ((match = poolRegex.exec(markdown)) !== null) {
-    const chainName = match[1].trim();
-    const name = match[2].trim();
-    const apyStr = match[3].replace('%', '').replace('+', '').trim();
-    const liquidityStr = match[4].replace(/,/g, '');
-    const expiryStr = match[5];
-    const chainSlug = match[6];
-    const poolAddress = match[7];
-    
-    // Map chain slug to chain ID
-    let chainId = 1;
-    if (chainSlug === 'katana' || chainName.includes('Katana')) chainId = 747474;
-    else if (chainSlug === 'avax' || chainName.includes('Avalanche')) chainId = 43114;
-    else if (chainSlug === 'flare' || chainName.includes('Flare')) chainId = 14;
-    else if (chainSlug === 'base' || chainName.includes('Base')) chainId = 8453;
-    else if (chainSlug === 'eth' || chainName.includes('Ethereum')) chainId = 1;
-    else if (chainSlug === 'arbitrum' || chainName.includes('Arbitrum')) chainId = 42161;
-    else if (chainSlug === 'op' || chainName.includes('Optimism')) chainId = 10;
-    else if (chainSlug === 'hyperevm' || chainName.includes('HyperEVM')) chainId = 999;
-    else if (chainSlug === 'sonic' || chainName.includes('Sonic')) chainId = 146;
-    
-    const apy = parseFloat(apyStr);
-    const liquidity = parseInt(liquidityStr) || 0;
-    
+
+  // Chain slug to chain ID mapping - the URL slug is the SOURCE OF TRUTH for chain
+  const chainSlugToId: Record<string, number> = {
+    'eth': 1,
+    'ethereum': 1,
+    'arbitrum': 42161,
+    'arb': 42161,
+    'op': 10,
+    'optimism': 10,
+    'base': 8453,
+    'sonic': 146,
+    'avax': 43114,
+    'avalanche': 43114,
+    'bsc': 56,
+    'bnb': 56,
+    'flare': 14,
+    'katana': 747474,
+    'hyperevm': 999,
+  };
+
+  // Split by pool entries using the link pattern
+  const poolBlocks = markdown.split(/\]\(https:\/\/app\.spectra\.finance\/pools\//);
+
+  for (let i = 0; i < poolBlocks.length - 1; i++) {
+    const block = poolBlocks[i];
+    const nextBlock = poolBlocks[i + 1];
+
+    // Extract pool URL info from next block - this determines the chain
+    const urlMatch = nextBlock.match(/^([\w]+):(0x[a-f0-9]+)\)/i);
+    if (!urlMatch) continue;
+
+    const chainSlug = urlMatch[1].toLowerCase();
+    const poolAddress = urlMatch[2];
+
+    // Chain ID from URL slug - the ONLY source of truth
+    const chainId = chainSlugToId[chainSlug] || 1;
+
+    // Extract APY
+    const apyMatch = block.match(/Max APY[\\\s\n]*([0-9.]+)%?\+?/i) ||
+                     block.match(/([0-9.]+)%[\\\s\n]*Interest-Bearing/i);
+    if (!apyMatch) continue;
+
+    // Extract Liquidity
+    const liquidityMatch = block.match(/Liquidity[\\\s\n]*\$([\d,]+)/i) ||
+                           block.match(/\$([\d,]+)[\\\s\n]*Expiry/i);
+    if (!liquidityMatch) continue;
+
+    // Extract Expiry
+    const expiryMatch = block.match(/Expiry[\\\s\n]*([A-Z][a-z]+ \d{1,2} \d{4})/i);
+
+    // Extract token name - try patterns
+    let tokenName = '';
+    let provider = '';
+
+    const tokenProviderMatch = block.match(/\\n\\n([\w\-\/\.]+)\\n\\n([\w\s\(\)\.]+)\\n\\nMax APY/i);
+    if (tokenProviderMatch) {
+      tokenName = tokenProviderMatch[1].trim();
+      provider = tokenProviderMatch[2].trim();
+    } else {
+      // Common yield token patterns
+      const tokenPatterns = [
+        /(vb[A-Z0-9]+)/i, /(st[A-Z0-9]+)/i, /(sav[A-Z0-9]+)/i, /(yv[A-Z0-9]+)/i,
+        /(ynETH[\w\-\/]*)/i, /(sj[A-Z0-9]+)/i, /(av[A-Z0-9]+)/i, /(re[A-Z0-9]+)/i,
+        /(hb[A-Z0-9]+)/i, /(BOLD|USDN|HYPE|AUSD|USDC|jEUR[x]?|wETH|cbBTC)/i,
+      ];
+
+      for (const pattern of tokenPatterns) {
+        const match = block.match(pattern);
+        if (match) {
+          tokenName = match[1];
+          break;
+        }
+      }
+
+      if (!tokenName) {
+        tokenName = `Pool-${poolAddress.slice(2, 10)}`;
+      }
+    }
+
+    const displayName = provider ? `${tokenName} (${provider})` : tokenName;
+
+    const apy = parseFloat(apyMatch[1]);
+    const liquidity = parseInt(liquidityMatch[1].replace(/,/g, ''));
+
     if (!isNaN(apy) && liquidity > 0) {
       pools.push({
-        name,
-        underlying: name.split('-')[0].trim(),
-        maxApy: apy > 200 ? 200 : apy, // Cap at 200%
+        name: displayName,
+        underlying: tokenName.replace(/[^a-zA-Z0-9]/g, ''),
+        maxApy: apy > 200 ? 200 : apy,
         liquidity,
-        expiry: expiryStr,
+        expiry: expiryMatch ? expiryMatch[1] : '',
         chainId,
-        chainName: SPECTRA_CHAINS[chainId] || chainName,
+        chainName: SPECTRA_CHAINS[chainId] || 'Unknown',
         poolAddress,
       });
     }
   }
-  
-  // If regex didn't work, try simpler approach - parse the structured data
-  if (pools.length === 0) {
-    console.log('Regex parsing failed, trying alternative method');
-    
-    // Split by pool entries using the link pattern
-    const poolBlocks = markdown.split(/\]\(https:\/\/app\.spectra\.finance\/pools\//);
-    
-    for (let i = 0; i < poolBlocks.length - 1; i++) {
-      const block = poolBlocks[i];
-      const nextBlock = poolBlocks[i + 1];
-      
-      // Extract pool URL info from next block
-      const urlMatch = nextBlock.match(/^([\w]+):(0x[a-f0-9]+)\)/i);
-      if (!urlMatch) continue;
-      
-      const chainSlug = urlMatch[1];
-      const poolAddress = urlMatch[2];
-      
-      // Extract APY - handle the \\n\\n format in scraped markdown
-      const apyMatch = block.match(/Max APY[\\\s\n]*([0-9.]+)%?\+?/i) ||
-                       block.match(/([0-9.]+)%[\\\s\n]*Interest-Bearing/i);
-      if (!apyMatch) continue;
-      
-      // Extract Liquidity
-      const liquidityMatch = block.match(/Liquidity[\\\s\n]*\$([\d,]+)/i) ||
-                             block.match(/\$([\d,]+)[\\\s\n]*Expiry/i);
-      if (!liquidityMatch) continue;
-      
-      // Extract Expiry
-      const expiryMatch = block.match(/Expiry[\\\s\n]*([A-Z][a-z]+ \d{1,2} \d{4})/i);
-      
-      // Extract name and provider - format is: asset\\n\\nProvider\\n\\nMax APY
-      // Look for token symbols: vbUSDC, stXRP, avUSD, BOLD, USDN, HYPE, AUSD, jEURx, etc.
-      const tokenMatch = block.match(/\\n\\n([\w\-\/]+)\\n\\n([\w\s\(\)]+)\\n\\nMax APY/i) ||
-                         block.match(/\]([\w\-\/]+)\\n\\n([\w\s\(\)]+)\\n\\nMax APY/i);
-      
-      // Also try to find common token patterns directly  
-      const simpleTokenMatch = block.match(/(vb[A-Z]+|st[A-Z]+|sav[A-Z]+|yv[A-Z]+|sj[A-Z]+|av[A-Z]+|re[A-Z]+|hb[A-Z]+|yn[A-Z\-\/]+|BOLD|USDN|HYPE|AUSD|USDC|jEUR[x]?)/i);
-      
-      let name: string;
-      let provider = '';
-      if (tokenMatch) {
-        name = tokenMatch[1].trim();
-        provider = tokenMatch[2].trim();
-      } else if (simpleTokenMatch) {
-        name = simpleTokenMatch[1];
-        // Try to find provider after the token name
-        const providerMatch = block.match(new RegExp(name + '\\\\n\\\\n([A-Za-z0-9\\s\\(\\)]+)\\\\n\\\\nMax', 'i'));
-        if (providerMatch) provider = providerMatch[1].trim();
-      } else {
-        name = `Pool-${poolAddress.slice(0, 8)}`;
-      }
-      
-      // Create a readable display name
-      const displayName = provider ? `${name} (${provider})` : name;
-      
-      // Map chain
-      let chainId = 1;
-      if (chainSlug === 'katana') chainId = 747474;
-      else if (chainSlug === 'avax') chainId = 43114;
-      else if (chainSlug === 'flare') chainId = 14;
-      else if (chainSlug === 'base') chainId = 8453;
-      else if (chainSlug === 'eth') chainId = 1;
-      else if (chainSlug === 'hyperevm') chainId = 999;
-      else if (chainSlug === 'sonic') chainId = 146;
-      else if (chainSlug === 'arbitrum') chainId = 42161;
-      else if (chainSlug === 'op') chainId = 10;
-      
-      const apy = parseFloat(apyMatch[1]);
-      const liquidity = parseInt(liquidityMatch[1].replace(/,/g, ''));
-      
-      if (!isNaN(apy) && liquidity > 0) {
-        pools.push({
-          name: displayName,
-          underlying: name.split('-')[0].replace(/[^a-zA-Z0-9]/g, '') || name,
-          maxApy: apy > 200 ? 200 : apy,
-          liquidity,
-          expiry: expiryMatch ? expiryMatch[1] : '',
-          chainId,
-          chainName: SPECTRA_CHAINS[chainId] || 'Unknown',
-          poolAddress,
-        });
-      }
-    }
-  }
-  
+
+  console.log(`Parsed ${pools.length} pools from Spectra markdown`);
   return pools;
 }
 
