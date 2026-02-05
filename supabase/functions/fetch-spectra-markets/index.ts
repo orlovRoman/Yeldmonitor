@@ -2,8 +2,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Alert thresholds (same as Pendle)
+const IMPLIED_APY_THRESHOLD = 0.01; // 1% change threshold for implied APY
 
 // Spectra Finance supported chains
 const SPECTRA_CHAINS: Record<number, string> = {
@@ -189,6 +192,7 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log('Starting Spectra Finance markets fetch via Firecrawl...');
+    const alerts: any[] = [];
 
     // Scrape the Spectra pools page
     const scrapeResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
@@ -266,16 +270,49 @@ Deno.serve(async (req) => {
           .single();
 
         if (poolData) {
+          const poolId = poolData.id;
+          const impliedApy = pool.maxApy / 100; // Convert from percent to decimal
+          
+          // Get previous rate for comparison
+          const { data: prevRate } = await supabase
+            .from('pendle_rates_history')
+            .select('implied_apy, underlying_apy')
+            .eq('pool_id', poolId)
+            .order('recorded_at', { ascending: false })
+            .limit(1)
+            .single();
+
           // Insert rate history with the scraped APY
           await supabase
             .from('pendle_rates_history')
             .insert({
-              pool_id: poolData.id,
-              implied_apy: pool.maxApy / 100, // Convert from percent to decimal
+              pool_id: poolId,
+              implied_apy: impliedApy,
               underlying_apy: 0, // Spectra shows Max APY which is similar to implied
               liquidity: pool.liquidity,
               volume_24h: 0,
             });
+          
+          // Check for alerts - compare with previous rate
+          if (prevRate) {
+            const prevImplied = Number(prevRate.implied_apy) || 0;
+            
+            // Check implied APY spike (1% threshold)
+            if (prevImplied > 0) {
+              const impliedChange = (impliedApy - prevImplied) / prevImplied;
+              if (Math.abs(impliedChange) >= IMPLIED_APY_THRESHOLD) {
+                alerts.push({
+                  pool_id: poolId,
+                  alert_type: 'implied_spike',
+                  previous_value: prevImplied,
+                  current_value: impliedApy,
+                  change_percent: impliedChange * 100,
+                  pool_name: pool.name,
+                  chain_name: pool.chainName,
+                });
+              }
+            }
+          }
           
           inserted++;
         }
@@ -284,12 +321,28 @@ Deno.serve(async (req) => {
       }
     }
 
+    console.log(`Generated ${alerts.length} alerts for Spectra pools`);
+
+    // Insert alerts
+    for (const alert of alerts) {
+      await supabase
+        .from('pendle_alerts')
+        .insert({
+          pool_id: alert.pool_id,
+          alert_type: alert.alert_type,
+          previous_value: alert.previous_value,
+          current_value: alert.current_value,
+          change_percent: alert.change_percent,
+        });
+    }
+
     console.log(`Successfully inserted/updated ${inserted} Spectra pools`);
 
     return new Response(JSON.stringify({
       success: true,
       pools_scraped: pools.length,
       pools_inserted: inserted,
+      alerts_generated: alerts.length,
       pools: pools.slice(0, 10), // Return first 10 for debugging
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
