@@ -119,10 +119,13 @@ export const getMarketUrl = (pool: { chain_id: number; market_address: string; n
   
   if (isSpectraPool(pool)) {
     // Spectra URL format: https://app.spectra.finance/pools/{chain}:{address}
+    // Extract pool address from market_address which is like "spectra-{chainId}-{slug}"
+    // We need to find the actual pool address - for now we'll use a direct link to pools page with chain filter
     const chainSlug = SPECTRA_CHAIN_SLUGS[pool.chain_id] || 'eth';
-    // Extract original pool address from spectra-{chainId}-{name} format
-    const addressPart = pool.market_address.replace(/^spectra-\d+-/, '');
-    return `https://app.spectra.finance/pools/${chainSlug}:${addressPart}`;
+    // The market_address contains the pool identifier we need
+    // Format: spectra-{chainId}-{pool-name-slug}
+    // Since we don't have the actual contract address, link to the pools page filtered by chain
+    return `https://app.spectra.finance/pools?network=${chainSlug}`;
   } else {
     // Pendle URL format
     const chainSlug = CHAIN_SLUGS[pool.chain_id] || 'ethereum';

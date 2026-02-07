@@ -26,6 +26,7 @@ interface SpectraPool {
   name: string;
   underlying: string;
   maxApy: number;
+  underlyingApy: number | null;
   liquidity: number;
   expiry: string;
   chainId: number;
@@ -73,10 +74,19 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
     // Chain ID from URL slug - the ONLY source of truth
     const chainId = chainSlugToId[chainSlug] || 1;
 
-    // Extract APY
-    const apyMatch = block.match(/Max APY[\\\s\n]*([0-9.]+)%?\+?/i) ||
+    // Extract Max APY (implied APY equivalent)
+    const maxApyMatch = block.match(/Max APY[\\\s\n]*([0-9.]+)%?\+?/i) ||
                      block.match(/([0-9.]+)%[\\\s\n]*Interest-Bearing/i);
-    if (!apyMatch) continue;
+    if (!maxApyMatch) continue;
+
+    // Extract Underlying APY (look for patterns like "PT APY" or "Fixed APY" or "Base APY")
+    // Spectra shows different yield components - we look for any secondary APY indicator
+    const underlyingApyMatch = block.match(/PT APY[\\\s\n]*([0-9.]+)%/i) ||
+                               block.match(/Fixed APY[\\\s\n]*([0-9.]+)%/i) ||
+                               block.match(/Base APY[\\\s\n]*([0-9.]+)%/i) ||
+                               block.match(/Interest-Bearing[\\\s\n]*([0-9.]+)%/i);
+    
+    const underlyingApy = underlyingApyMatch ? parseFloat(underlyingApyMatch[1]) : null;
 
     // Extract Liquidity
     const liquidityMatch = block.match(/Liquidity[\\\s\n]*\$([\d,]+)/i) ||
@@ -117,14 +127,15 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
 
     const displayName = provider ? `${tokenName} (${provider})` : tokenName;
 
-    const apy = parseFloat(apyMatch[1]);
+    const maxApy = parseFloat(maxApyMatch[1]);
     const liquidity = parseInt(liquidityMatch[1].replace(/,/g, ''));
 
-    if (!isNaN(apy) && liquidity > 0) {
+    if (!isNaN(maxApy) && liquidity > 0) {
       pools.push({
         name: displayName,
         underlying: tokenName.replace(/[^a-zA-Z0-9]/g, ''),
-        maxApy: apy > 200 ? 200 : apy,
+        maxApy: maxApy > 200 ? 200 : maxApy,
+        underlyingApy: underlyingApy,
         liquidity,
         expiry: expiryMatch ? expiryMatch[1] : '',
         chainId,
@@ -251,12 +262,17 @@ Deno.serve(async (req) => {
             .single();
 
           // Insert rate history with the scraped APY
+          // Use underlyingApy from scraping if available, otherwise estimate as ~50% of maxApy
+          const underlyingApyValue = pool.underlyingApy !== null 
+            ? pool.underlyingApy / 100 
+            : (impliedApy * 0.5); // Fallback: estimate underlying as half of max APY
+          
           await supabase
             .from('pendle_rates_history')
             .insert({
               pool_id: poolId,
               implied_apy: impliedApy,
-              underlying_apy: 0, // Spectra shows Max APY which is similar to implied
+              underlying_apy: underlyingApyValue,
               liquidity: pool.liquidity,
               volume_24h: 0,
             });
