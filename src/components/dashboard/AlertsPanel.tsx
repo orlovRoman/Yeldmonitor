@@ -100,9 +100,9 @@ export function AlertsPanel() {
     }
   };
 
-  // Filter out dismissed alerts AND implied_spike alerts (they are in a separate panel)
+  // Filter out implied_spike alerts (they are in a separate panel), but keep all statuses
   const activeAlerts = alerts?.filter((a) => 
-    a.status !== 'dismissed' && a.alert_type !== 'implied_spike'
+    a.alert_type !== 'implied_spike'
   ) || [];
 
   if (isLoading) {
