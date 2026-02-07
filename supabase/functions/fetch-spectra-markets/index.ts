@@ -172,7 +172,8 @@ Deno.serve(async (req) => {
         url: 'https://app.spectra.finance/pools',
         formats: ['markdown'],
         onlyMainContent: true,
-        waitFor: 8000, // Wait for dynamic content to load
+        waitFor: 15000,
+        timeout: 60000, // 60 seconds total timeout
       }),
     });
 
