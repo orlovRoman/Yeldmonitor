@@ -100,7 +100,10 @@ export function AlertsPanel() {
     }
   };
 
-  const activeAlerts = alerts?.filter((a) => a.status !== 'dismissed') || [];
+  // Filter out dismissed alerts AND implied_spike alerts (they are in a separate panel)
+  const activeAlerts = alerts?.filter((a) => 
+    a.status !== 'dismissed' && a.alert_type !== 'implied_spike'
+  ) || [];
 
   if (isLoading) {
     return (
@@ -119,11 +122,6 @@ export function AlertsPanel() {
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-warning" />
             <h3 className="font-semibold">Алерты</h3>
-            {activeAlerts.length > 0 && (
-              <Badge variant="destructive" className="text-xs">
-                {activeAlerts.length}
-              </Badge>
-            )}
           </div>
         </div>
         <ScrollArea className="h-[600px]">
@@ -137,20 +135,11 @@ export function AlertsPanel() {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {activeAlerts.map((alert) => {
-                // Highlight implied APY decrease (negative change on implied_spike)
-                const isImpliedDecrease = 
-                  alert.alert_type === 'implied_spike' && Number(alert.change_percent) < 0;
-                
-                return (
+              {activeAlerts.map((alert) => (
                 <div
                   key={alert.id}
                   onClick={() => setSelectedAlertId(alert.id)}
-                  className={`p-4 cursor-pointer transition-colors hover:bg-muted/50 ${
-                    isImpliedDecrease 
-                      ? 'bg-destructive/10 border-l-4 border-l-destructive' 
-                      : alert.status === 'new' ? 'bg-warning/5' : ''
-                  }`}
+                  className="p-4 cursor-pointer transition-colors hover:bg-muted/50"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
@@ -164,11 +153,6 @@ export function AlertsPanel() {
                         >
                           {getPlatformName(alert.pendle_pools)}
                         </Badge>
-                        {alert.status === 'new' && (
-                          <Badge className="bg-warning text-warning-foreground text-xs">
-                            Новый
-                          </Badge>
-                        )}
                       </div>
                       <p className="text-sm text-muted-foreground mt-1">
                         {getAlertTypeLabel(alert.alert_type, alert.change_percent)}
@@ -216,7 +200,7 @@ export function AlertsPanel() {
                     </div>
                   )}
                 </div>
-              )})}
+              ))}
             </div>
           )}
         </ScrollArea>

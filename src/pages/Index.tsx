@@ -1,4 +1,4 @@
-import { RefreshCw, Loader2, Flame } from 'lucide-react';
+import { RefreshCw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StatsCards } from '@/components/dashboard/StatsCards';
 import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
@@ -11,27 +11,22 @@ const Index = () => {
   const fetchMarkets = useFetchMarkets();
   const fetchSpectra = useFetchSpectraMarkets();
 
-  const handleRefresh = async () => {
-    try {
-      const result = await fetchMarkets.mutateAsync();
-      toast.success(`Pendle: ${result.markets_processed} пулов, ${result.alerts_generated} алертов`);
-    } catch (error) {
-      toast.error('Ошибка обновления Pendle');
-      console.error(error);
-    }
-  };
-
-  const handleRefreshSpectra = async () => {
-    try {
-      const result = await fetchSpectra.mutateAsync();
-      toast.success(`Spectra: ${result.pools_scraped} пулов загружено`);
-    } catch (error) {
-      toast.error('Ошибка обновления Spectra');
-      console.error(error);
-    }
-  };
-
   const isLoading = fetchMarkets.isPending || fetchSpectra.isPending;
+
+  const handleRefreshAll = async () => {
+    try {
+      const [pendleResult, spectraResult] = await Promise.all([
+        fetchMarkets.mutateAsync(),
+        fetchSpectra.mutateAsync(),
+      ]);
+      toast.success(
+        `Pendle: ${pendleResult.markets_processed} пулов, ${pendleResult.alerts_generated} алертов. Spectra: ${spectraResult.pools_scraped} пулов.`
+      );
+    } catch (error) {
+      toast.error('Ошибка обновления данных');
+      console.error(error);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -47,34 +42,19 @@ const Index = () => {
               <p className="text-xs text-muted-foreground">Pendle + Spectra с AI-аналитикой</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              onClick={handleRefresh}
-              disabled={isLoading}
-              variant="outline"
-              className="gap-2"
-            >
-              {fetchMarkets.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              Pendle
-            </Button>
-            <Button
-              onClick={handleRefreshSpectra}
-              disabled={isLoading}
-              variant="outline"
-              className="gap-2"
-            >
-              {fetchSpectra.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Flame className="h-4 w-4" />
-              )}
-              Spectra
-            </Button>
-          </div>
+          <Button
+            onClick={handleRefreshAll}
+            disabled={isLoading}
+            variant="outline"
+            className="gap-2"
+          >
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            Обновить
+          </Button>
         </div>
       </header>
 

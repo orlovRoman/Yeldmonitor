@@ -173,7 +173,7 @@ export function useStats() {
   });
 }
 
-// Hook to fetch new pools (added in the last 24 hours)
+// Hook to fetch new pools (added in the last 24 hours OR recently updated with new rates)
 export function useNewPools() {
   return useQuery({
     queryKey: ['new-pools'],
@@ -181,33 +181,43 @@ export function useNewPools() {
       const oneDayAgo = new Date();
       oneDayAgo.setHours(oneDayAgo.getHours() - 24);
 
+      // Get pools created in last 24h OR updated in last 24h (which includes new markets)
       const { data: pools, error } = await supabase
         .from('pendle_pools')
         .select('*')
-        .gte('created_at', oneDayAgo.toISOString())
+        .or(`created_at.gte.${oneDayAgo.toISOString()},updated_at.gte.${oneDayAgo.toISOString()}`)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      // Get latest rates for liquidity
+      // Get latest rates for liquidity and filter to only pools with recent first rate record
       const poolsWithRates = await Promise.all(
         (pools || []).map(async (pool) => {
           const { data: rates } = await supabase
             .from('pendle_rates_history')
-            .select('liquidity')
+            .select('liquidity, recorded_at')
             .eq('pool_id', pool.id)
-            .order('recorded_at', { ascending: false })
+            .order('recorded_at', { ascending: true })
             .limit(1)
             .single();
+
+          // Check if this pool's first rate record is within last 24 hours (new market)
+          const isNewMarket = rates?.recorded_at && 
+            new Date(rates.recorded_at) > oneDayAgo;
+
+          // Include if created in last 24h OR is a new market (first rate in last 24h)
+          const isNew = new Date(pool.created_at) > oneDayAgo || isNewMarket;
 
           return {
             ...pool,
             liquidity: rates?.liquidity || null,
+            isNew,
           };
         })
       );
 
-      return poolsWithRates;
+      // Filter to only truly new pools/markets
+      return poolsWithRates.filter(p => p.isNew);
     },
     refetchInterval: 60000,
   });
