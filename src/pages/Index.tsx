@@ -4,23 +4,25 @@ import { StatsCards } from '@/components/dashboard/StatsCards';
 import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
 import { NewPoolsPanel } from '@/components/dashboard/NewPoolsPanel';
 import { ImpliedDropsPanel } from '@/components/dashboard/ImpliedDropsPanel';
-import { useFetchMarkets, useFetchSpectraMarkets } from '@/hooks/usePendle';
+import { useFetchMarkets, useFetchSpectraMarkets, useFetchExponentMarkets } from '@/hooks/usePendle';
 import { toast } from 'sonner';
 
 const Index = () => {
   const fetchMarkets = useFetchMarkets();
   const fetchSpectra = useFetchSpectraMarkets();
+  const fetchExponent = useFetchExponentMarkets();
 
-  const isLoading = fetchMarkets.isPending || fetchSpectra.isPending;
+  const isLoading = fetchMarkets.isPending || fetchSpectra.isPending || fetchExponent.isPending;
 
   const handleRefreshAll = async () => {
     try {
-      const [pendleResult, spectraResult] = await Promise.all([
+      const [pendleResult, spectraResult, exponentResult] = await Promise.all([
         fetchMarkets.mutateAsync(),
         fetchSpectra.mutateAsync(),
+        fetchExponent.mutateAsync(),
       ]);
       toast.success(
-        `Pendle: ${pendleResult.markets_processed} пулов, ${pendleResult.alerts_generated} алертов. Spectra: ${spectraResult.pools_scraped} пулов.`
+        `Pendle: ${pendleResult.markets_processed} пулов. Spectra: ${spectraResult.pools_scraped} пулов. Exponent: ${exponentResult.pools_scraped} пулов.`
       );
     } catch (error) {
       toast.error('Ошибка обновления данных');
@@ -39,7 +41,7 @@ const Index = () => {
             </div>
             <div>
               <h1 className="text-xl font-bold gradient-text">Yield Monitor</h1>
-              <p className="text-xs text-muted-foreground">Pendle + Spectra с AI-аналитикой</p>
+              <p className="text-xs text-muted-foreground">Pendle + Spectra + Exponent</p>
             </div>
           </div>
           <Button
@@ -71,8 +73,8 @@ const Index = () => {
       {/* Footer */}
       <footer className="border-t border-border mt-12 py-6">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          <p>Данные обновляются каждые 15 минут • Порог алерта: 20% изменение</p>
-          <p className="mt-1">Powered by Pendle + Spectra Finance + Perplexity AI</p>
+          <p>Данные обновляются каждые 15 минут • Порог алерта: 1% изменение</p>
+          <p className="mt-1">Powered by Pendle + Spectra + Exponent Finance</p>
         </div>
       </footer>
     </div>

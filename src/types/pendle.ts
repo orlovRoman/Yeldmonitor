@@ -54,6 +54,7 @@ export const CHAIN_NAMES: Record<number, string> = {
   14: 'Flare',
   43114: 'Avalanche',
   747474: 'Katana',
+  501: 'Solana', // Exponent Finance
 };
 
 export const CHAIN_COLORS: Record<number, string> = {
@@ -70,6 +71,7 @@ export const CHAIN_COLORS: Record<number, string> = {
   14: '#E62058',
   43114: '#E84142',
   747474: '#8B5CF6',
+  501: '#9945FF', // Solana purple
 };
 
 export const CHAIN_SLUGS: Record<number, string> = {
@@ -108,16 +110,27 @@ export const isSpectraPool = (pool: { name?: string; market_address?: string } |
   return pool.name?.startsWith('[Spectra]') || pool.market_address?.startsWith('spectra-') || false;
 };
 
+// Helper to check if a pool is from Exponent
+export const isExponentPool = (pool: { name?: string; market_address?: string } | null | undefined): boolean => {
+  if (!pool) return false;
+  return pool.name?.startsWith('[Exponent]') || pool.market_address?.startsWith('exponent-') || false;
+};
+
 // Helper to get platform name
-export const getPlatformName = (pool: { name?: string; market_address?: string } | null | undefined): 'Spectra' | 'Pendle' => {
-  return isSpectraPool(pool) ? 'Spectra' : 'Pendle';
+export const getPlatformName = (pool: { name?: string; market_address?: string } | null | undefined): 'Exponent' | 'Spectra' | 'Pendle' => {
+  if (isExponentPool(pool)) return 'Exponent';
+  if (isSpectraPool(pool)) return 'Spectra';
+  return 'Pendle';
 };
 
 // Helper to get market URL based on platform
 export const getMarketUrl = (pool: { chain_id: number; market_address: string; name?: string } | null | undefined): string => {
   if (!pool) return '#';
   
-  if (isSpectraPool(pool)) {
+  if (isExponentPool(pool)) {
+    // Exponent Finance URL - link to the Income page
+    return 'https://www.exponent.finance/income';
+  } else if (isSpectraPool(pool)) {
     // Spectra YT trading URL format: https://app.spectra.finance/trade-yield?network={chain}
     const chainSlug = SPECTRA_CHAIN_SLUGS[pool.chain_id] || 'eth';
     return `https://app.spectra.finance/trade-yield?network=${chainSlug}`;
