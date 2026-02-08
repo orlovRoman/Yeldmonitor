@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { TrendingDown, ArrowUpDown, ExternalLink } from 'lucide-react';
 import { usePendleAlerts } from '@/hooks/usePendle';
-import { CHAIN_NAMES, getPlatformName, getMarketUrl, isSpectraPool } from '@/types/pendle';
+import { CHAIN_NAMES, getPlatformName, getMarketUrl, isSpectraPool, isExponentPool } from '@/types/pendle';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
@@ -155,7 +155,13 @@ export function ImpliedDropsPanel() {
                         </span>
                         <Badge 
                           variant="outline" 
-                          className={`text-xs ${isSpectraPool(alert.pendle_pools) ? 'border-purple-500 text-purple-500' : 'border-primary text-primary'}`}
+                          className={`text-xs ${
+                            isExponentPool(alert.pendle_pools) 
+                              ? 'border-orange-500 text-orange-500' 
+                              : isSpectraPool(alert.pendle_pools) 
+                                ? 'border-purple-500 text-purple-500' 
+                                : 'border-primary text-primary'
+                          }`}
                         >
                           {getPlatformName(alert.pendle_pools)}
                         </Badge>
