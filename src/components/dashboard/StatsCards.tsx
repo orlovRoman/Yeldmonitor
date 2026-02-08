@@ -1,21 +1,25 @@
 import { Activity, Network } from 'lucide-react';
 import { usePendlePools } from '@/hooks/usePendle';
+import { isSpectraPool, isExponentPool } from '@/types/pendle';
 
 export function StatsCards() {
   const { data: pools, isLoading } = usePendlePools();
 
   // Calculate stats with platform breakdown
-  const pendlePools = pools?.filter(p => !p.name?.startsWith('[Spectra]')) || [];
-  const spectraPools = pools?.filter(p => p.name?.startsWith('[Spectra]')) || [];
+  const pendlePools = pools?.filter(p => !isSpectraPool(p) && !isExponentPool(p)) || [];
+  const spectraPools = pools?.filter(p => isSpectraPool(p)) || [];
+  const exponentPools = pools?.filter(p => isExponentPool(p)) || [];
 
   const pendleNetworks = new Set(pendlePools.map(p => p.chain_id));
   const spectraNetworks = new Set(spectraPools.map(p => p.chain_id));
+  const exponentNetworks = new Set(exponentPools.map(p => p.chain_id));
 
   const cards = [
     {
       title: 'Активных пулов',
       pendle: pendlePools.length,
       spectra: spectraPools.length,
+      exponent: exponentPools.length,
       icon: Activity,
       color: 'text-primary',
       bgColor: 'bg-primary/10',
@@ -24,6 +28,7 @@ export function StatsCards() {
       title: 'Сетей',
       pendle: pendleNetworks.size,
       spectra: spectraNetworks.size,
+      exponent: exponentNetworks.size,
       icon: Network,
       color: 'text-chart-underlying',
       bgColor: 'bg-secondary',
@@ -40,17 +45,23 @@ export function StatsCards() {
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <p className="text-sm text-muted-foreground">{card.title}</p>
-              <div className="mt-2 flex items-baseline gap-4">
-                <div className="flex items-center gap-1.5">
+              <div className="mt-2 flex items-baseline gap-3 flex-wrap">
+                <div className="flex items-center gap-1">
                   <span className="text-xs text-muted-foreground">Pendle:</span>
-                  <span className="text-lg font-bold tabular-nums">
+                  <span className="text-base font-bold tabular-nums">
                     {isLoading ? '—' : card.pendle}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1">
                   <span className="text-xs text-purple-400">Spectra:</span>
-                  <span className="text-lg font-bold tabular-nums text-purple-400">
+                  <span className="text-base font-bold tabular-nums text-purple-400">
                     {isLoading ? '—' : card.spectra}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-orange-400">Exponent:</span>
+                  <span className="text-base font-bold tabular-nums text-orange-400">
+                    {isLoading ? '—' : card.exponent}
                   </span>
                 </div>
               </div>
