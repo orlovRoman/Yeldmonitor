@@ -75,7 +75,7 @@ export function usePendleAlerts() {
           pendle_pools (*)
         `)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(500);
 
       if (error) throw error;
       return (data || []) as PendleAlert[];

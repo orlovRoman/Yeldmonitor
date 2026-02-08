@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, Sparkles, X, ExternalLink, Loader2, Copy, Check } from 'lucide-react';
 import { usePendleAlerts, useAnalyzeAlert, useDismissAlert } from '@/hooks/usePendle';
-import { getAlertTypeLabel, ALERT_PARAM_LABELS, CHAIN_NAMES, getPlatformName, getMarketUrl, isSpectraPool } from '@/types/pendle';
+import { getAlertTypeLabel, ALERT_PARAM_LABELS, CHAIN_NAMES, getPlatformName, getMarketUrl, isSpectraPool, isExponentPool } from '@/types/pendle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -149,7 +149,13 @@ export function AlertsPanel() {
                         </span>
                         <Badge 
                           variant="outline" 
-                          className={`text-xs ${isSpectraPool(alert.pendle_pools) ? 'border-purple-500 text-purple-500' : 'border-primary text-primary'}`}
+                          className={`text-xs ${
+                            isExponentPool(alert.pendle_pools) 
+                              ? 'border-orange-500 text-orange-500' 
+                              : isSpectraPool(alert.pendle_pools) 
+                                ? 'border-purple-500 text-purple-500' 
+                                : 'border-primary text-primary'
+                          }`}
                         >
                           {getPlatformName(alert.pendle_pools)}
                         </Badge>
@@ -217,7 +223,13 @@ export function AlertsPanel() {
                   <>
                     <Badge 
                       variant="outline" 
-                      className={`text-xs ${isSpectraPool(selectedAlert.pendle_pools) ? 'border-purple-500 text-purple-500' : 'border-primary text-primary'}`}
+                      className={`text-xs ${
+                        isExponentPool(selectedAlert.pendle_pools) 
+                          ? 'border-orange-500 text-orange-500' 
+                          : isSpectraPool(selectedAlert.pendle_pools) 
+                            ? 'border-purple-500 text-purple-500' 
+                            : 'border-primary text-primary'
+                      }`}
                     >
                       {getPlatformName(selectedAlert.pendle_pools)}
                     </Badge>
