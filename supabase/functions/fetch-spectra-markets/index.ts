@@ -7,6 +7,7 @@ const corsHeaders = {
 
 // Alert thresholds (same as Pendle)
 const IMPLIED_APY_THRESHOLD = 0.01; // 1% change threshold for implied APY
+const ALERT_COOLDOWN_HOURS = 1; // Prevent duplicate alerts within this window
 
 // Spectra Finance supported chains
 const SPECTRA_CHAINS: Record<number, string> = {
@@ -34,11 +35,11 @@ interface SpectraPool {
   poolAddress: string;
 }
 
-// Parse pool data from Firecrawl markdown
+// Parse pool data from Firecrawl markdown - improved version
 function parseSpectraPools(markdown: string): SpectraPool[] {
   const pools: SpectraPool[] = [];
 
-  // Chain slug to chain ID mapping - the URL slug is the SOURCE OF TRUTH for chain
+  // Chain slug to chain ID mapping
   const chainSlugToId: Record<string, number> = {
     'eth': 1,
     'ethereum': 1,
@@ -57,96 +58,140 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
     'hyperevm': 999,
   };
 
-  // Split by pool entries using the link pattern
-  const poolBlocks = markdown.split(/\]\(https:\/\/app\.spectra\.finance\/pools\//);
+  // Split by pool link entries - each pool card ends with a link to the pool
+  // Pattern: [link text](https://app.spectra.finance/pools/chainSlug:0xaddress)
+  const poolLinkRegex = /\[([^\]]*)\]\(https:\/\/app\.spectra\.finance\/pools\/(\w+):(0x[a-f0-9]+)\)/gi;
+  
+  const matches = [...markdown.matchAll(poolLinkRegex)];
+  console.log(`Found ${matches.length} pool links in markdown`);
 
-  for (let i = 0; i < poolBlocks.length - 1; i++) {
-    const block = poolBlocks[i];
-    const nextBlock = poolBlocks[i + 1];
-
-    // Extract pool URL info from next block - this determines the chain
-    const urlMatch = nextBlock.match(/^([\w]+):(0x[a-f0-9]+)\)/i);
-    if (!urlMatch) continue;
-
-    const chainSlug = urlMatch[1].toLowerCase();
-    const poolAddress = urlMatch[2];
-
-    // Chain ID from URL slug - the ONLY source of truth
+  for (const match of matches) {
+    const chainSlug = match[2].toLowerCase();
+    const poolAddress = match[3];
     const chainId = chainSlugToId[chainSlug] || 1;
-
-    // Extract Max APY (implied APY equivalent)
-    const maxApyMatch = block.match(/Max APY[\\\s\n]*([0-9.]+)%?\+?/i) ||
-                     block.match(/([0-9.]+)%[\\\s\n]*Interest-Bearing/i);
-    if (!maxApyMatch) continue;
-
-    // Extract Underlying APY (look for patterns like "PT APY" or "Fixed APY" or "Base APY")
-    // Spectra shows different yield components - we look for any secondary APY indicator
-    const underlyingApyMatch = block.match(/PT APY[\\\s\n]*([0-9.]+)%/i) ||
-                               block.match(/Fixed APY[\\\s\n]*([0-9.]+)%/i) ||
-                               block.match(/Base APY[\\\s\n]*([0-9.]+)%/i) ||
-                               block.match(/Interest-Bearing[\\\s\n]*([0-9.]+)%/i);
     
-    const underlyingApy = underlyingApyMatch ? parseFloat(underlyingApyMatch[1]) : null;
+    // Find the section before this link to extract pool data
+    const linkPos = match.index!;
+    const sectionStart = Math.max(0, linkPos - 1500); // Look back up to 1500 chars
+    const section = markdown.slice(sectionStart, linkPos);
+    
+    // Extract Max APY - this is the implied APY equivalent
+    // Look for patterns like "Max APY\n\n14.89%" or "92.22%\n\nInterest-Bearing"
+    const maxApyPatterns = [
+      /Max APY[\s\\n]*([0-9.]+)%/i,
+      /([0-9.]+)%[\s\\n]*\+?[\s\\n]*Interest-Bearing/i,
+      /APY[\s\\n]*([0-9.]+)%/i,
+    ];
+    
+    let maxApy = 0;
+    for (const pattern of maxApyPatterns) {
+      const apyMatch = section.match(pattern);
+      if (apyMatch) {
+        maxApy = parseFloat(apyMatch[1]);
+        break;
+      }
+    }
+    
+    if (maxApy === 0 || isNaN(maxApy)) {
+      console.log(`Skipping pool ${poolAddress} - no APY found`);
+      continue;
+    }
+
+    // Extract underlying APY (PT APY, Fixed APY, Base APY)
+    const underlyingPatterns = [
+      /PT APY[\s\\n]*([0-9.]+)%/i,
+      /Fixed APY[\s\\n]*([0-9.]+)%/i,
+      /Base APY[\s\\n]*([0-9.]+)%/i,
+    ];
+    
+    let underlyingApy: number | null = null;
+    for (const pattern of underlyingPatterns) {
+      const underlyingMatch = section.match(pattern);
+      if (underlyingMatch) {
+        underlyingApy = parseFloat(underlyingMatch[1]);
+        break;
+      }
+    }
 
     // Extract Liquidity
-    const liquidityMatch = block.match(/Liquidity[\\\s\n]*\$([\d,]+)/i) ||
-                           block.match(/\$([\d,]+)[\\\s\n]*Expiry/i);
-    if (!liquidityMatch) continue;
+    const liquidityPatterns = [
+      /Liquidity[\s\\n]*\$([\d,]+)/i,
+      /\$([\d,]+)[\s\\n]*(?:Liquidity|Expiry)/i,
+    ];
+    
+    let liquidity = 0;
+    for (const pattern of liquidityPatterns) {
+      const liqMatch = section.match(pattern);
+      if (liqMatch) {
+        liquidity = parseInt(liqMatch[1].replace(/,/g, ''));
+        break;
+      }
+    }
+    
+    if (liquidity === 0) {
+      console.log(`Skipping pool ${poolAddress} - no liquidity found`);
+      continue;
+    }
 
     // Extract Expiry
-    const expiryMatch = block.match(/Expiry[\\\s\n]*([A-Z][a-z]+ \d{1,2} \d{4})/i);
+    const expiryMatch = section.match(/Expiry[\s\\n]*([A-Z][a-z]+ \d{1,2} \d{4})/i);
+    const expiry = expiryMatch ? expiryMatch[1] : '';
 
-    // Extract token name - try patterns
+    // Extract token name - look for common yield token patterns NEAR the pool link
+    // Take the closest 500 chars for token name extraction
+    const nearSection = markdown.slice(Math.max(0, linkPos - 500), linkPos);
+    
     let tokenName = '';
-    let provider = '';
+    const tokenPatterns = [
+      /(vb[A-Z0-9]+)/i,      // Yearn vaults like vbUSDC
+      /(st[A-Z0-9]+)/i,      // Staked tokens like stXRP
+      /(sav[A-Z0-9]+)/i,     // Savings tokens
+      /(yv[A-Z0-9]+)/i,      // Yearn vaults
+      /(ynETH[\w\-\/]*)/i,   // ynETH variants
+      /(sj[A-Z0-9]+)/i,      // SJ tokens
+      /(av[A-Z0-9]+)/i,      // Avalanche tokens
+      /(re[A-Z0-9]+)/i,      // reETH etc
+      /(hb[A-Z0-9]+)/i,      // HB tokens
+      /(BOLD|USDN|HYPE|AUSD|USDC|jEUR[x]?|wETH|cbBTC|avax)/i,
+    ];
 
-    const tokenProviderMatch = block.match(/\\n\\n([\w\-\/\.]+)\\n\\n([\w\s\(\)\.]+)\\n\\nMax APY/i);
-    if (tokenProviderMatch) {
-      tokenName = tokenProviderMatch[1].trim();
-      provider = tokenProviderMatch[2].trim();
-    } else {
-      // Common yield token patterns
-      const tokenPatterns = [
-        /(vb[A-Z0-9]+)/i, /(st[A-Z0-9]+)/i, /(sav[A-Z0-9]+)/i, /(yv[A-Z0-9]+)/i,
-        /(ynETH[\w\-\/]*)/i, /(sj[A-Z0-9]+)/i, /(av[A-Z0-9]+)/i, /(re[A-Z0-9]+)/i,
-        /(hb[A-Z0-9]+)/i, /(BOLD|USDN|HYPE|AUSD|USDC|jEUR[x]?|wETH|cbBTC)/i,
-      ];
-
-      for (const pattern of tokenPatterns) {
-        const match = block.match(pattern);
-        if (match) {
-          tokenName = match[1];
-          break;
-        }
-      }
-
-      if (!tokenName) {
-        tokenName = `Pool-${poolAddress.slice(2, 10)}`;
+    for (const pattern of tokenPatterns) {
+      const tokenMatch = nearSection.match(pattern);
+      if (tokenMatch) {
+        tokenName = tokenMatch[1];
+        break;
       }
     }
 
-    const displayName = provider ? `${tokenName} (${provider})` : tokenName;
-
-    const maxApy = parseFloat(maxApyMatch[1]);
-    const liquidity = parseInt(liquidityMatch[1].replace(/,/g, ''));
-
-    if (!isNaN(maxApy) && liquidity > 0) {
-      pools.push({
-        name: displayName,
-        underlying: tokenName.replace(/[^a-zA-Z0-9]/g, ''),
-        maxApy: maxApy > 200 ? 200 : maxApy,
-        underlyingApy: underlyingApy,
-        liquidity,
-        expiry: expiryMatch ? expiryMatch[1] : '',
-        chainId,
-        chainName: SPECTRA_CHAINS[chainId] || 'Unknown',
-        poolAddress,
-      });
+    if (!tokenName) {
+      tokenName = `Pool-${poolAddress.slice(2, 10)}`;
     }
+
+    // Cap max APY at 200% to avoid parsing errors
+    const finalMaxApy = maxApy > 200 ? 200 : maxApy;
+
+    pools.push({
+      name: tokenName,
+      underlying: tokenName.replace(/[^a-zA-Z0-9]/g, ''),
+      maxApy: finalMaxApy,
+      underlyingApy,
+      liquidity,
+      expiry,
+      chainId,
+      chainName: SPECTRA_CHAINS[chainId] || 'Unknown',
+      poolAddress,
+    });
+    
+    console.log(`Parsed pool: ${tokenName} on ${SPECTRA_CHAINS[chainId]}, APY: ${finalMaxApy}%, Liquidity: $${liquidity}`);
   }
 
-  console.log(`Parsed ${pools.length} pools from Spectra markdown`);
-  return pools;
+  // Remove duplicates based on poolAddress (same pool might appear multiple times)
+  const uniquePools = pools.filter((pool, index, self) => 
+    index === self.findIndex(p => p.poolAddress === pool.poolAddress)
+  );
+
+  console.log(`Parsed ${uniquePools.length} unique pools from Spectra markdown (${pools.length} total matches)`);
+  return uniquePools;
 }
 
 Deno.serve(async (req) => {
@@ -184,7 +229,7 @@ Deno.serve(async (req) => {
         formats: ['markdown'],
         onlyMainContent: true,
         waitFor: 15000,
-        timeout: 60000, // 60 seconds total timeout
+        timeout: 60000,
       }),
     });
 
@@ -207,10 +252,12 @@ Deno.serve(async (req) => {
 
     // Store pools in database
     let inserted = 0;
+    let alertsCreated = 0;
+    
     for (const pool of pools) {
       try {
-        // Create a unique market address based on pool name and chain
-        const marketAddress = `spectra-${pool.chainId}-${pool.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+        // Create a unique market address based on pool address and chain
+        const marketAddress = `spectra-${pool.chainId}-${pool.poolAddress.slice(2, 14).toLowerCase()}`;
         
         // Parse expiry date
         let expiryDate: string | null = null;
@@ -261,39 +308,61 @@ Deno.serve(async (req) => {
             .limit(1)
             .single();
 
-          // Insert rate history with the scraped APY
-          // Use underlyingApy from scraping if available, otherwise estimate as ~50% of maxApy
-          const underlyingApyValue = pool.underlyingApy !== null 
-            ? pool.underlyingApy / 100 
-            : (impliedApy * 0.5); // Fallback: estimate underlying as half of max APY
+          // Only insert rate if it changed significantly (>0.1% difference) to avoid noise
+          const prevImplied = prevRate ? Number(prevRate.implied_apy) : 0;
+          const apyDifference = Math.abs(impliedApy - prevImplied);
           
-          await supabase
-            .from('pendle_rates_history')
-            .insert({
-              pool_id: poolId,
-              implied_apy: impliedApy,
-              underlying_apy: underlyingApyValue,
-              liquidity: pool.liquidity,
-              volume_24h: 0,
-            });
-          
-          // Check for alerts - compare with previous rate
-          if (prevRate) {
-            const prevImplied = Number(prevRate.implied_apy) || 0;
+          if (!prevRate || apyDifference > 0.001) {
+            // Use underlyingApy from scraping if available, otherwise estimate
+            const underlyingApyValue = pool.underlyingApy !== null 
+              ? pool.underlyingApy / 100 
+              : (impliedApy * 0.5);
             
+            await supabase
+              .from('pendle_rates_history')
+              .insert({
+                pool_id: poolId,
+                implied_apy: impliedApy,
+                underlying_apy: underlyingApyValue,
+                liquidity: pool.liquidity,
+                volume_24h: 0,
+              });
+            
+            console.log(`Inserted rate for ${pool.name}: ${(impliedApy * 100).toFixed(2)}%`);
+          }
+          
+          // Check for alerts - only if rate changed significantly
+          if (prevRate && apyDifference > 0.001) {
             // Check implied APY spike (1% threshold)
             if (prevImplied > 0) {
               const impliedChange = (impliedApy - prevImplied) / prevImplied;
+              
               if (Math.abs(impliedChange) >= IMPLIED_APY_THRESHOLD) {
-                alerts.push({
-                  pool_id: poolId,
-                  alert_type: 'implied_spike',
-                  previous_value: prevImplied,
-                  current_value: impliedApy,
-                  change_percent: impliedChange * 100,
-                  pool_name: pool.name,
-                  chain_name: pool.chainName,
-                });
+                // CHECK FOR DUPLICATE ALERTS - prevent alert spam
+                const cooldownTime = new Date(Date.now() - ALERT_COOLDOWN_HOURS * 60 * 60 * 1000).toISOString();
+                
+                const { data: existingAlerts } = await supabase
+                  .from('pendle_alerts')
+                  .select('id')
+                  .eq('pool_id', poolId)
+                  .eq('alert_type', 'implied_spike')
+                  .gte('created_at', cooldownTime)
+                  .limit(1);
+                
+                // Only create alert if no recent alert exists for this pool
+                if (!existingAlerts || existingAlerts.length === 0) {
+                  alerts.push({
+                    pool_id: poolId,
+                    alert_type: 'implied_spike',
+                    previous_value: prevImplied,
+                    current_value: impliedApy,
+                    change_percent: impliedChange * 100,
+                    pool_name: pool.name,
+                    chain_name: pool.chainName,
+                  });
+                } else {
+                  console.log(`Skipping duplicate alert for ${pool.name} - alert exists within ${ALERT_COOLDOWN_HOURS}h`);
+                }
               }
             }
           }
@@ -305,11 +374,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`Generated ${alerts.length} alerts for Spectra pools`);
+    console.log(`Generated ${alerts.length} new alerts for Spectra pools`);
 
     // Insert alerts
     for (const alert of alerts) {
-      await supabase
+      const { error } = await supabase
         .from('pendle_alerts')
         .insert({
           pool_id: alert.pool_id,
@@ -318,16 +387,20 @@ Deno.serve(async (req) => {
           current_value: alert.current_value,
           change_percent: alert.change_percent,
         });
+      
+      if (!error) {
+        alertsCreated++;
+      }
     }
 
-    console.log(`Successfully inserted/updated ${inserted} Spectra pools`);
+    console.log(`Successfully inserted/updated ${inserted} Spectra pools, created ${alertsCreated} alerts`);
 
     return new Response(JSON.stringify({
       success: true,
       pools_scraped: pools.length,
       pools_inserted: inserted,
-      alerts_generated: alerts.length,
-      pools: pools.slice(0, 10), // Return first 10 for debugging
+      alerts_generated: alertsCreated,
+      pools: pools.slice(0, 10),
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
