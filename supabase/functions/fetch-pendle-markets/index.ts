@@ -201,14 +201,14 @@ serve(async (req) => {
 
           // Check underlying APY spike
           if (prevUnderlying > 0) {
-            const underlyingChange = Math.abs((underlyingApy - prevUnderlying) / prevUnderlying);
-            if (underlyingChange >= ALERT_THRESHOLD) {
+            const underlyingChange = (underlyingApy - prevUnderlying) / prevUnderlying;
+            if (Math.abs(underlyingChange) >= ALERT_THRESHOLD) {
               alerts.push({
                 pool_id: poolId,
                 alert_type: 'underlying_spike',
                 previous_value: prevUnderlying,
                 current_value: underlyingApy,
-                change_percent: underlyingChange * 100,
+                change_percent: underlyingChange * 100, // Keep sign for direction
                 pool_name: market.name,
                 chain_name: market.chainName,
               });
