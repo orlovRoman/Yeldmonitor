@@ -99,12 +99,20 @@ async function callRateXApi<T>(method: string, content: Record<string, unknown> 
         throw new Error(`RateX API error: ${response.status} ${response.statusText}`);
     }
 
-    const data = await response.json();
-    if (data.code !== 0) {
-        throw new Error(`RateX API returned error code ${data.code}: ${data.msg}`);
+    const result: any = await response.json();
+    if (result.code !== 0) {
+        throw new Error(`RateX API returned error code ${result.code}: ${result.msg}`);
     }
 
-    return data;
+    // Handle nested data structures for querySymbol
+    if (method === 'querySymbol' && result.data && typeof result.data === 'object' && !Array.isArray(result.data)) {
+        if (Array.isArray((result.data as any).symbols)) {
+            console.log(`[RateX] Using nested symbols list for ${method}`);
+            result.data = (result.data as any).symbols;
+        }
+    }
+
+    return result;
 }
 
 // Verify API key for scheduled job access
