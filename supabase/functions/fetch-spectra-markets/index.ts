@@ -137,21 +137,23 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
 
     // Extract token name patterns
     const tokenPatterns = [
-      /(vb[A-Z0-9]+)/i,      // Yearn vaults like vbUSDC
-      /(st[A-Z0-9]+)/i,      // Staked tokens like stXRP
-      /(sav[A-Z0-9]+)/i,     // Savings tokens
-      /(yv[A-Z0-9]+)/i,      // Yearn vaults
-      /(ynETH[\w-/]*)/i,   // ynETH variants
-      /(sj[A-Z0-9]+)/i,      // SJ tokens
-      /(av[A-Z0-9]+)/i,      // Avalanche tokens
-      /(re[A-Z0-9]+)/i,      // reETH etc
-      /(hb[A-Z0-9]+)/i,      // HB tokens
-      /(BOLD|USDN|HYPE|AUSD|USDC|jEUR[x]?|wETH|cbBTC|avax)/i,
+      /\b(vb[A-Z0-9]+)\b/i,      // Yearn vaults like vbUSDC
+      /\b(st[A-Z0-9]+)\b/i,      // Staked tokens like stXRP
+      /\b(sav[A-Z0-9]+)\b/i,     // Savings tokens
+      /\b(yv[A-Z0-9]+)\b/i,      // Yearn vaults
+      /\b(ynETH[\w-/]*)\b/i,     // ynETH variants
+      /\b(sj[A-Z0-9]+)\b/i,      // SJ tokens
+      /\b(av[A-Z0-9]+)\b/i,      // Avalanche tokens
+      /\b(re[A-Z0-9]+)\b/i,      // reETH etc
+      /\b(hb[A-Z0-9]+)\b/i,      // HB tokens
+      /\b(BOLD|USDN|HYPE|AUSD|USDC|jEUR[x]?|wETH|cbBTC|avax)\b/i,
     ];
 
-    // Extract Expiry
-    const expiryMatch = combinedSection.match(/Expiry[\s\\n]*([A-Z][a-z]+ \d{1,2} \d{4})/i);
-    const expiry = expiryMatch ? expiryMatch[1] : '';
+    // Extract Expiry - prioritize search in linkText
+    let expiry = '';
+    const expiryMatch = linkText.match(/Expiry[\s\\n]*([A-Z][a-z]+ \d{1,2} \d{4})/i) ||
+      sectionBefore.match(/Expiry[\s\\n]*([A-Z][a-z]+ \d{1,2} \d{4})/i);
+    if (expiryMatch) expiry = expiryMatch[1];
 
     // Extract token name - check link text first as it's most reliable now
     let tokenName = '';
