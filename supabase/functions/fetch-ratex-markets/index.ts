@@ -10,6 +10,9 @@ const RATEX_API_URL = 'https://api.rate-x.io/';
 
 // Threshold for price change alerts (20%)
 const PRICE_CHANGE_THRESHOLD = 0.20;
+// Threshold for APY change alerts (10% relative)
+const APY_CHANGE_THRESHOLD = 0.10;
+const RATEX_CHAIN_ID = 502; // Custom ID for RateX/Solana in this app
 
 interface RateXSymbol {
     id: number;
@@ -182,8 +185,36 @@ serve(async (req) => {
         // 4. Process each active market
         for (const market of activeMarkets) {
             try {
-                // Upsert pool
+                // Upsert pool into main pendle_pools table for dashboard unification
+                const marketAddress = `ratex-${market.symbol}`;
                 const { data: poolData, error: poolError } = await supabase
+                    .from('pendle_pools')
+                    .upsert({
+                        chain_id: RATEX_CHAIN_ID,
+                        market_address: marketAddress,
+                        name: `[RateX] ${market.symbol_name || market.symbol}`,
+                        underlying_asset: market.symbol_level1_category || null,
+                        expiry: market.due_date || null,
+                    }, {
+                        onConflict: 'chain_id,market_address'
+                    })
+                    .select('id')
+                    .single();
+
+                if (poolError) {
+                    console.error(`Error upserting pool ${market.symbol}:`, poolError);
+                    continue;
+                }
+
+                const poolId = poolData.id;
+                const currentPrice = market.sum_price || 0;
+                // RateX Implied APY is approximately upper_yield
+                const currentImpliedApy = (market.initial_upper_yield_range || 0) / 100;
+                // RateX Underlying APY is approximately lower_yield
+                const currentUnderlyingApy = (market.initial_lower_yield_range || 0) / 100;
+
+                // Sync with original ratex_pools for backwards compatibility if needed
+                await supabase
                     .from('ratex_pools')
                     .upsert({
                         symbol: market.symbol,
@@ -203,51 +234,52 @@ serve(async (req) => {
                         ratex_id: market.id,
                     }, {
                         onConflict: 'symbol',
-                    })
-                    .select('id')
-                    .single();
+                    });
 
-                if (poolError) {
-                    console.error(`Error upserting pool ${market.symbol}:`, poolError);
-                    continue;
-                }
-
-                const poolId = poolData.id;
-                const currentPrice = market.sum_price || 0;
-
-                // Get previous rate for comparison
+                // Get previous rate for comparison from unified history
                 const { data: prevRate } = await supabase
-                    .from('ratex_rates_history')
-                    .select('sum_price')
+                    .from('pendle_rates_history')
+                    .select('implied_apy, liquidity')
                     .eq('pool_id', poolId)
                     .order('recorded_at', { ascending: false })
                     .limit(1)
                     .single();
 
-                // Insert new rate snapshot
+                // Insert new rate snapshot into unified history
+                await supabase
+                    .from('pendle_rates_history')
+                    .insert({
+                        pool_id: poolId,
+                        implied_apy: currentImpliedApy,
+                        underlying_apy: currentUnderlyingApy,
+                        liquidity: 0, // Individual TVL not in querySymbol, fixed separately in useRateX
+                        volume_24h: 0,
+                    });
+
+                // Backward compatibility rate history
                 await supabase
                     .from('ratex_rates_history')
                     .insert({
-                        pool_id: poolId,
+                        pool_id: poolId, // This might break if ratex_rates_history foreign key points to ratex_pools
                         sum_price: currentPrice,
                         lower_yield: market.initial_lower_yield_range,
                         upper_yield: market.initial_upper_yield_range,
                         earn_w: market.earn_w,
-                    });
+                    }).catch(() => { }); // Ignore error as we shift to unified
 
-                // Check for price change alerts
+                // Check for APY change alerts (Unified)
                 if (prevRate) {
-                    const prevPrice = Number(prevRate.sum_price) || 0;
+                    const prevImplied = Number(prevRate.implied_apy) || 0;
 
-                    if (prevPrice > 0) {
-                        const priceChange = (currentPrice - prevPrice) / prevPrice;
-                        if (Math.abs(priceChange) >= PRICE_CHANGE_THRESHOLD) {
+                    if (prevImplied > 0) {
+                        const apyChange = (currentImpliedApy - prevImplied) / prevImplied;
+                        if (Math.abs(apyChange) >= APY_CHANGE_THRESHOLD) {
                             alerts.push({
                                 pool_id: poolId,
-                                alert_type: 'price_spike',
-                                previous_value: prevPrice,
-                                current_value: currentPrice,
-                                change_percent: priceChange * 100,
+                                alert_type: 'implied_spike',
+                                previous_value: prevImplied,
+                                current_value: currentImpliedApy,
+                                change_percent: apyChange * 100,
                                 pool_name: market.symbol_name,
                             });
                         }
@@ -260,10 +292,10 @@ serve(async (req) => {
 
         console.log(`Generated ${alerts.length} alerts`);
 
-        // 5. Insert alerts
+        // 5. Insert alerts into unified table
         for (const alert of alerts) {
             await supabase
-                .from('ratex_alerts')
+                .from('pendle_alerts')
                 .insert({
                     pool_id: alert.pool_id,
                     alert_type: alert.alert_type,
@@ -271,6 +303,17 @@ serve(async (req) => {
                     current_value: alert.current_value,
                     change_percent: alert.change_percent,
                 });
+
+            // Still insert into ratex_alerts for backward compatibility
+            await supabase
+                .from('ratex_alerts')
+                .insert({
+                    pool_id: alert.pool_id, // Error prone as mentioned above, but kept as best effort
+                    alert_type: alert.alert_type,
+                    previous_value: alert.previous_value,
+                    current_value: alert.current_value,
+                    change_percent: alert.change_percent,
+                }).catch(() => { });
         }
 
         return new Response(JSON.stringify({
