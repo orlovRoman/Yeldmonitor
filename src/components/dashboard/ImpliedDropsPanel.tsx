@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { TrendingDown, ArrowUpDown, ExternalLink } from 'lucide-react';
 import { usePendleAlerts } from '@/hooks/usePendle';
-import { CHAIN_NAMES, getPlatformName, getMarketUrl, isSpectraPool, isExponentPool } from '@/types/pendle';
+import { CHAIN_NAMES, getPlatformName, getMarketUrl, isSpectraPool, isExponentPool, isRateXPool } from '@/types/pendle';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
@@ -42,7 +42,7 @@ export function ImpliedDropsPanel() {
 
   // Filter: only implied_spike with negative change within last hour
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-  
+
   const impliedDrops = (alerts || [])
     .filter((a) => {
       if (a.alert_type !== 'implied_spike') return false;
@@ -70,10 +70,10 @@ export function ImpliedDropsPanel() {
   useEffect(() => {
     const fetchUnderlyingApy = async () => {
       if (impliedDrops.length === 0) return;
-      
+
       const poolIds = [...new Set(impliedDrops.map(a => a.pool_id))];
       const apyMap: UnderlyingApyData = {};
-      
+
       for (const poolId of poolIds) {
         const { data } = await supabase
           .from('pendle_rates_history')
@@ -82,13 +82,13 @@ export function ImpliedDropsPanel() {
           .order('recorded_at', { ascending: false })
           .limit(1)
           .single();
-        
+
         apyMap[poolId] = data?.underlying_apy ?? null;
       }
-      
+
       setUnderlyingApyMap(apyMap);
     };
-    
+
     fetchUnderlyingApy();
   }, [alerts]);
 
@@ -141,7 +141,7 @@ export function ImpliedDropsPanel() {
           <div className="divide-y divide-border">
             {impliedDrops.map((alert) => {
               const underlyingApy = underlyingApyMap[alert.pool_id];
-              
+
               return (
                 <div
                   key={alert.id}
@@ -153,15 +153,16 @@ export function ImpliedDropsPanel() {
                         <span className="font-medium truncate">
                           {getDisplayName(alert.pendle_pools)}
                         </span>
-                        <Badge 
-                          variant="outline" 
-                          className={`text-xs ${
-                            isExponentPool(alert.pendle_pools) 
-                              ? 'border-orange-500 text-orange-500' 
-                              : isSpectraPool(alert.pendle_pools) 
-                                ? 'border-purple-500 text-purple-500' 
+                        <Badge
+                          variant="outline"
+                          className={`text-xs ${isRateXPool(alert.pendle_pools)
+                            ? 'border-blue-500 text-blue-500'
+                            : isExponentPool(alert.pendle_pools)
+                              ? 'border-orange-500 text-orange-500'
+                              : isSpectraPool(alert.pendle_pools)
+                                ? 'border-purple-500 text-purple-500'
                                 : 'border-primary text-primary'
-                          }`}
+                            }`}
                         >
                           {getPlatformName(alert.pendle_pools)}
                         </Badge>

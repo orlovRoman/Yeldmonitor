@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, Sparkles, X, ExternalLink, Loader2, Copy, Check } from 'lucide-react';
 import { usePendleAlerts, useAnalyzeAlert, useDismissAlert } from '@/hooks/usePendle';
-import { getAlertTypeLabel, ALERT_PARAM_LABELS, CHAIN_NAMES, getPlatformName, getMarketUrl, isSpectraPool, isExponentPool } from '@/types/pendle';
+import { getAlertTypeLabel, ALERT_PARAM_LABELS, CHAIN_NAMES, getPlatformName, getMarketUrl, isSpectraPool, isExponentPool, isRateXPool } from '@/types/pendle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -100,10 +100,7 @@ export function AlertsPanel() {
     }
   };
 
-  // Filter out implied_spike alerts (they are in a separate panel), but keep all statuses
-  const activeAlerts = alerts?.filter((a) => 
-    a.alert_type !== 'implied_spike'
-  ) || [];
+  const activeAlerts = alerts || [];
 
   if (isLoading) {
     return (
@@ -147,15 +144,16 @@ export function AlertsPanel() {
                         <span className="font-medium truncate">
                           {getDisplayName(alert.pendle_pools)}
                         </span>
-                        <Badge 
-                          variant="outline" 
-                          className={`text-xs ${
-                            isExponentPool(alert.pendle_pools) 
-                              ? 'border-orange-500 text-orange-500' 
-                              : isSpectraPool(alert.pendle_pools) 
-                                ? 'border-purple-500 text-purple-500' 
+                        <Badge
+                          variant="outline"
+                          className={`text-xs ${isRateXPool(alert.pendle_pools)
+                            ? 'border-blue-500 text-blue-500'
+                            : isExponentPool(alert.pendle_pools)
+                              ? 'border-orange-500 text-orange-500'
+                              : isSpectraPool(alert.pendle_pools)
+                                ? 'border-purple-500 text-purple-500'
                                 : 'border-primary text-primary'
-                          }`}
+                            }`}
                         >
                           {getPlatformName(alert.pendle_pools)}
                         </Badge>
@@ -221,27 +219,28 @@ export function AlertsPanel() {
                 <span>{getDisplayName(selectedAlert?.pendle_pools) || 'Детали алерта'}</span>
                 {selectedAlert?.pendle_pools && (
                   <>
-                    <Badge 
-                      variant="outline" 
-                      className={`text-xs ${
-                        isExponentPool(selectedAlert.pendle_pools) 
-                          ? 'border-orange-500 text-orange-500' 
-                          : isSpectraPool(selectedAlert.pendle_pools) 
-                            ? 'border-purple-500 text-purple-500' 
+                    <Badge
+                      variant="outline"
+                      className={`text-xs ${isRateXPool(selectedAlert.pendle_pools)
+                        ? 'border-blue-500 text-blue-500'
+                        : isExponentPool(selectedAlert.pendle_pools)
+                          ? 'border-orange-500 text-orange-500'
+                          : isSpectraPool(selectedAlert.pendle_pools)
+                            ? 'border-purple-500 text-purple-500'
                             : 'border-primary text-primary'
-                      }`}
+                        }`}
                     >
                       {getPlatformName(selectedAlert.pendle_pools)}
                     </Badge>
-                  <a
+                    <a
                       href={getMarketUrl(selectedAlert.pendle_pools)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:text-primary/80 transition-colors"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:text-primary/80 transition-colors"
                       title={`Открыть на ${getPlatformName(selectedAlert.pendle_pools)}`}
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
                   </>
                 )}
               </div>
@@ -320,9 +319,8 @@ export function AlertsPanel() {
                 <div className="p-4 rounded-lg bg-muted text-center">
                   <p className="text-sm text-muted-foreground">Изменение</p>
                   <p
-                    className={`text-2xl font-bold mt-1 tabular-nums ${
-                      Number(selectedAlert.change_percent) > 0 ? 'text-success' : 'text-destructive'
-                    }`}
+                    className={`text-2xl font-bold mt-1 tabular-nums ${Number(selectedAlert.change_percent) > 0 ? 'text-success' : 'text-destructive'
+                      }`}
                   >
                     {formatChange(selectedAlert.change_percent)}
                   </p>
@@ -345,7 +343,7 @@ export function AlertsPanel() {
                       <p className="text-sm font-medium mb-2">Источники:</p>
                       <div className="flex flex-wrap gap-2">
                         {selectedAlert.sources
-                          .filter((source): source is string => 
+                          .filter((source): source is string =>
                             typeof source === 'string' && isValidHttpUrl(source)
                           )
                           .map((source, i) => (
