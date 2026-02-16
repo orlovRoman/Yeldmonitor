@@ -4,25 +4,36 @@ import { StatsCards } from '@/components/dashboard/StatsCards';
 import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
 import { NewPoolsPanel } from '@/components/dashboard/NewPoolsPanel';
 import { ImpliedDropsPanel } from '@/components/dashboard/ImpliedDropsPanel';
-import { useFetchMarkets, useFetchSpectraMarkets, useFetchExponentMarkets } from '@/hooks/usePendle';
+import {
+  useFetchMarkets,
+  useFetchSpectraMarkets,
+  useFetchExponentMarkets,
+  useFetchRateXMarkets
+} from '@/hooks/usePendle';
 import { toast } from 'sonner';
+import { SystemHealthDialog } from '@/components/dashboard/SystemHealthDialog';
 
 const Index = () => {
   const fetchMarkets = useFetchMarkets();
   const fetchSpectra = useFetchSpectraMarkets();
   const fetchExponent = useFetchExponentMarkets();
+  const fetchRateX = useFetchRateXMarkets();
 
-  const isLoading = fetchMarkets.isPending || fetchSpectra.isPending || fetchExponent.isPending;
+  const isLoading = fetchMarkets.isPending ||
+    fetchSpectra.isPending ||
+    fetchExponent.isPending ||
+    fetchRateX.isPending;
 
   const handleRefreshAll = async () => {
     try {
-      const [pendleResult, spectraResult, exponentResult] = await Promise.all([
+      const [pendleResult, spectraResult, exponentResult, ratexResult] = await Promise.all([
         fetchMarkets.mutateAsync(),
         fetchSpectra.mutateAsync(),
         fetchExponent.mutateAsync(),
+        fetchRateX.mutateAsync(),
       ]);
       toast.success(
-        `Pendle: ${pendleResult.markets_processed} пулов. Spectra: ${spectraResult.pools_scraped} пулов. Exponent: ${exponentResult.pools_scraped} пулов. RateX обновлен.`
+        `Pendle: ${pendleResult.markets_processed} пулов. Spectra: ${spectraResult.pools_scraped} пулов. Exponent: ${exponentResult.pools_scraped} пулов. RateX: ${ratexResult.pools_scraped || 'обновлен'}.`
       );
     } catch (error) {
       toast.error('Ошибка обновления данных');
@@ -44,19 +55,22 @@ const Index = () => {
               <p className="text-xs text-muted-foreground">Pendle + Spectra + Exponent + RateX</p>
             </div>
           </div>
-          <Button
-            onClick={handleRefreshAll}
-            disabled={isLoading}
-            variant="outline"
-            className="gap-2"
-          >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            Обновить
-          </Button>
+          <div className="flex items-center gap-2">
+            <SystemHealthDialog />
+            <Button
+              onClick={handleRefreshAll}
+              disabled={isLoading}
+              variant="outline"
+              className="gap-2"
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              Обновить
+            </Button>
+          </div>
         </div>
       </header>
 
