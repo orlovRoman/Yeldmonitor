@@ -1,7 +1,0 @@
-{
-    "serverName": "AdminSvr",
-    "method": "queryTotalVolumeAndTvl",
-    "content": {
-        "cid": "b7e238ab-d5b1-20b7-a042-21ad0886dec8"
-    }
-}
