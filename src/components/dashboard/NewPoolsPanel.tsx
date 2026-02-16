@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Plus, ExternalLink, ArrowUpDown, Calendar } from 'lucide-react';
 import { usePendlePools } from '@/hooks/usePendle';
-import { CHAIN_NAMES, getPlatformName, getMarketUrl, isSpectraPool, isExponentPool } from '@/types/pendle';
+import { CHAIN_NAMES, getPlatformName, getMarketUrl, isSpectraPool, isExponentPool, isRateXPool } from '@/types/pendle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -124,15 +124,16 @@ export function NewPoolsPanel() {
                       <span className="font-medium truncate">
                         {pool.underlying_asset || pool.name}
                       </span>
-                      <Badge 
-                        variant="outline" 
-                        className={`text-xs ${
-                          isExponentPool(pool) 
-                            ? 'border-orange-500 text-orange-500' 
-                            : isSpectraPool(pool) 
-                              ? 'border-purple-500 text-purple-500' 
-                              : 'border-primary text-primary'
-                        }`}
+                      <Badge
+                        variant="outline"
+                        className={`text-xs ${isRateXPool(pool)
+                            ? 'border-[#14F195] text-[#14F195]'
+                            : isExponentPool(pool)
+                              ? 'border-orange-500 text-orange-500'
+                              : isSpectraPool(pool)
+                                ? 'border-purple-500 text-purple-500'
+                                : 'border-primary text-primary'
+                          }`}
                       >
                         {getPlatformName(pool)}
                       </Badge>

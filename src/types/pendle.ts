@@ -55,6 +55,7 @@ export const CHAIN_NAMES: Record<number, string> = {
   43114: 'Avalanche',
   747474: 'Katana',
   501: 'Solana', // Exponent Finance
+  502: 'Solana', // RateX
 };
 
 export const CHAIN_COLORS: Record<number, string> = {
@@ -72,6 +73,7 @@ export const CHAIN_COLORS: Record<number, string> = {
   43114: '#E84142',
   747474: '#8B5CF6',
   501: '#9945FF', // Solana purple
+  502: '#14F195', // Solana green for RateX difference
 };
 
 export const CHAIN_SLUGS: Record<number, string> = {
@@ -100,7 +102,7 @@ export const SPECTRA_CHAIN_SLUGS: Record<number, string> = {
   43114: 'avax',
   56: 'bsc',
   14: 'flare',
-  747474: 'katana',
+  103: 'katana',
   999: 'hyperevm',
 };
 
@@ -116,8 +118,15 @@ export const isExponentPool = (pool: { name?: string; market_address?: string } 
   return pool.name?.startsWith('[Exponent]') || pool.market_address?.startsWith('exponent-') || false;
 };
 
+// Helper to check if a pool is from RateX
+export const isRateXPool = (pool: { name?: string; market_address?: string } | null | undefined): boolean => {
+  if (!pool) return false;
+  return pool.name?.startsWith('[RateX]') || pool.market_address?.startsWith('ratex-') || false;
+};
+
 // Helper to get platform name
-export const getPlatformName = (pool: { name?: string; market_address?: string } | null | undefined): 'Exponent' | 'Spectra' | 'Pendle' => {
+export const getPlatformName = (pool: { name?: string; market_address?: string } | null | undefined): 'Exponent' | 'Spectra' | 'RateX' | 'Pendle' => {
+  if (isRateXPool(pool)) return 'RateX';
   if (isExponentPool(pool)) return 'Exponent';
   if (isSpectraPool(pool)) return 'Spectra';
   return 'Pendle';
@@ -126,8 +135,10 @@ export const getPlatformName = (pool: { name?: string; market_address?: string }
 // Helper to get market URL based on platform
 export const getMarketUrl = (pool: { chain_id: number; market_address: string; name?: string } | null | undefined): string => {
   if (!pool) return '#';
-  
-  if (isExponentPool(pool)) {
+
+  if (isRateXPool(pool)) {
+    return 'https://app.rate-x.io/leverage';
+  } else if (isExponentPool(pool)) {
     // Exponent Finance URL - link to the Income page
     return 'https://www.exponent.finance/income';
   } else if (isSpectraPool(pool)) {

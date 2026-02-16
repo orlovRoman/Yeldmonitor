@@ -1,18 +1,20 @@
 import { Activity, Network } from 'lucide-react';
 import { usePendlePools } from '@/hooks/usePendle';
-import { isSpectraPool, isExponentPool } from '@/types/pendle';
+import { isSpectraPool, isExponentPool, isRateXPool } from '@/types/pendle';
 
 export function StatsCards() {
   const { data: pools, isLoading } = usePendlePools();
 
   // Calculate stats with platform breakdown
-  const pendlePools = pools?.filter(p => !isSpectraPool(p) && !isExponentPool(p)) || [];
+  const pendlePools = pools?.filter(p => !isSpectraPool(p) && !isExponentPool(p) && !isRateXPool(p)) || [];
   const spectraPools = pools?.filter(p => isSpectraPool(p)) || [];
   const exponentPools = pools?.filter(p => isExponentPool(p)) || [];
+  const ratexPools = pools?.filter(p => isRateXPool(p)) || [];
 
   const pendleNetworks = new Set(pendlePools.map(p => p.chain_id));
   const spectraNetworks = new Set(spectraPools.map(p => p.chain_id));
   const exponentNetworks = new Set(exponentPools.map(p => p.chain_id));
+  const ratexNetworks = new Set(ratexPools.map(p => p.chain_id));
 
   const cards = [
     {
@@ -20,6 +22,7 @@ export function StatsCards() {
       pendle: pendlePools.length,
       spectra: spectraPools.length,
       exponent: exponentPools.length,
+      ratex: ratexPools.length,
       icon: Activity,
       color: 'text-primary',
       bgColor: 'bg-primary/10',
@@ -29,6 +32,7 @@ export function StatsCards() {
       pendle: pendleNetworks.size,
       spectra: spectraNetworks.size,
       exponent: exponentNetworks.size,
+      ratex: ratexNetworks.size,
       icon: Network,
       color: 'text-chart-underlying',
       bgColor: 'bg-secondary',
@@ -62,6 +66,12 @@ export function StatsCards() {
                   <span className="text-xs text-orange-400">Exponent:</span>
                   <span className="text-base font-bold tabular-nums text-orange-400">
                     {isLoading ? '—' : card.exponent}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-green-400">RateX:</span>
+                  <span className="text-base font-bold tabular-nums text-green-400">
+                    {isLoading ? '—' : card.ratex}
                   </span>
                 </div>
               </div>

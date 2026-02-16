@@ -22,7 +22,7 @@ const Index = () => {
         fetchExponent.mutateAsync(),
       ]);
       toast.success(
-        `Pendle: ${pendleResult.markets_processed} пулов. Spectra: ${spectraResult.pools_scraped} пулов. Exponent: ${exponentResult.pools_scraped} пулов.`
+        `Pendle: ${pendleResult.markets_processed} пулов. Spectra: ${spectraResult.pools_scraped} пулов. Exponent: ${exponentResult.pools_scraped} пулов. RateX обновлен.`
       );
     } catch (error) {
       toast.error('Ошибка обновления данных');
@@ -41,7 +41,7 @@ const Index = () => {
             </div>
             <div>
               <h1 className="text-xl font-bold gradient-text">Yield Monitor</h1>
-              <p className="text-xs text-muted-foreground">Pendle + Spectra + Exponent</p>
+              <p className="text-xs text-muted-foreground">Pendle + Spectra + Exponent + RateX</p>
             </div>
           </div>
           <Button
@@ -74,7 +74,7 @@ const Index = () => {
       <footer className="border-t border-border mt-12 py-6">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
           <p>Данные обновляются каждые 15 минут • Порог алерта: 1% изменение</p>
-          <p className="mt-1">Powered by Pendle + Spectra + Exponent Finance</p>
+          <p className="mt-1">Powered by Pendle + Spectra + Exponent + RateX Finance</p>
         </div>
       </footer>
     </div>

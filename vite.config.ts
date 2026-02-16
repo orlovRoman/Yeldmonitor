@@ -8,6 +8,14 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    proxy: {
+      '/ratex-api': {
+        target: 'https://api.rate-x.io',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ratex-api/, ''),
+        secure: false,
+      },
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

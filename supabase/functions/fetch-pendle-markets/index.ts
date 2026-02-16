@@ -42,19 +42,19 @@ interface PendleMarket {
 function verifyAccess(req: Request): boolean {
   const authHeader = req.headers.get('Authorization');
   const expectedKey = Deno.env.get('PENDLE_CRON_API_KEY');
-  
+
   // If no API key configured, allow access (for frontend/development)
   if (!expectedKey) {
     console.log('PENDLE_CRON_API_KEY not configured - allowing access');
     return true;
   }
-  
+
   // If API key is configured, require valid Bearer token
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     console.error('Missing or invalid Authorization header');
     return false;
   }
-  
+
   const providedKey = authHeader.replace('Bearer ', '');
   return providedKey === expectedKey;
 }
@@ -79,14 +79,22 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log('Starting Pendle markets fetch...');
-    const allMarkets: any[] = [];
-    const alerts: any[] = [];
+    const allMarkets: (PendleMarket & { chainId: number; chainName: string })[] = [];
+    const alerts: {
+      pool_id: string;
+      alert_type: string;
+      previous_value: number;
+      current_value: number;
+      change_percent: number;
+      pool_name: string;
+      chain_name: string;
+    }[] = [];
 
     // Fetch markets from all chains
     for (const chain of SUPPORTED_CHAINS) {
       try {
         console.log(`Fetching markets for ${chain.name} (chainId: ${chain.chainId})...`);
-        
+
         const response = await fetch(
           `https://api-v2.pendle.finance/core/v1/${chain.chainId}/markets?order_by=name%3A1&skip=0&limit=100`,
           {
@@ -101,9 +109,9 @@ serve(async (req) => {
 
         const data = await response.json();
         const markets = data.results || data || [];
-        
+
         console.log(`Found ${markets.length} markets on ${chain.name}`);
-        
+
         for (const market of markets) {
           allMarkets.push({
             chainId: chain.chainId,
@@ -227,7 +235,7 @@ serve(async (req) => {
             .eq('alert_type', 'yield_divergence')
             .gte('created_at', twentyFourHoursAgo)
             .limit(1);
-          
+
           if (!existingDivergence || existingDivergence.length === 0) {
             alerts.push({
               pool_id: poolId,

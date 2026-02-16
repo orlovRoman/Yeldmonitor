@@ -28,7 +28,7 @@ function parseExponentPools(markdown: string): ExponentPool[] {
   // Find the table section - Exponent uses a markdown table format
   // Format: | Market | Your Positions | Liquidity | Fixed APY | Time Left |
   const tableMatch = markdown.match(/\| Market \| Your Positions \| Liquidity \| Fixed APY \| Time Left \|[\s\S]*?(?=\n\n[^|]|\n\n$|$)/i);
-  
+
   if (!tableMatch) {
     console.log('No table found in markdown, trying alternative parsing...');
     // Alternative: parse from individual pool blocks
@@ -43,7 +43,7 @@ function parseExponentPools(markdown: string): ExponentPool[] {
       // Parse row like:
       // | ![...](...)eUSXSolstice PT-eUSX-01JUN26![...] | - | $957.80K | 8.56% | 113 days |
       const cells = row.split('|').map(c => c.trim()).filter(c => c);
-      
+
       if (cells.length < 5) continue;
 
       const marketCell = cells[0];
@@ -91,8 +91,8 @@ function parseExponentPools(markdown: string): ExponentPool[] {
       const timeMatch = timeLeftCell.match(/(\d+)\s*(days?|months?)/i);
       let expiryDate = '';
       if (timeMatch) {
-        const days = timeMatch[2].toLowerCase().includes('month') 
-          ? parseInt(timeMatch[1]) * 30 
+        const days = timeMatch[2].toLowerCase().includes('month')
+          ? parseInt(timeMatch[1]) * 30
           : parseInt(timeMatch[1]);
         const expiry = new Date();
         expiry.setDate(expiry.getDate() + days);
@@ -151,18 +151,18 @@ function parseExponentPoolsAlternative(markdown: string): ExponentPool[] {
 
       // Extract token name from previous block (last token before "Current Fixed APY")
       const tokenMatch = prevBlock.match(/([a-zA-Z0-9+]+)\s*\n\s*Maturity:/i) ||
-                        prevBlock.match(/\n([a-zA-Z0-9+]+)\s*\n/g);
-      
+        prevBlock.match(/\n([a-zA-Z0-9+]+)\s*\n/g);
+
       let tokenName = '';
       if (tokenMatch) {
-        tokenName = Array.isArray(tokenMatch) 
+        tokenName = Array.isArray(tokenMatch)
           ? tokenMatch[tokenMatch.length - 1].trim().replace(/\n/g, '')
           : tokenMatch[1];
       }
 
       // Extract maturity
       const maturityMatch = prevBlock.match(/Maturity:\s*(\d{1,2}\s+\w+\s+\d{4})/i) ||
-                           block.match(/Maturity:\s*(\d{1,2}\s+\w+\s+\d{4})/i);
+        block.match(/Maturity:\s*(\d{1,2}\s+\w+\s+\d{4})/i);
       let expiryDate = '';
       if (maturityMatch) {
         try {
@@ -174,7 +174,7 @@ function parseExponentPoolsAlternative(markdown: string): ExponentPool[] {
 
       // Extract liquidity from nearby content
       const liquidityMatch = block.match(/\$([\d.]+)(K|M)/i) ||
-                            prevBlock.match(/\$([\d.]+)(K|M)/i);
+        prevBlock.match(/\$([\d.]+)(K|M)/i);
       let liquidity = 0;
       if (liquidityMatch) {
         liquidity = parseFloat(liquidityMatch[1]);
@@ -211,7 +211,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
-    
+
     if (!firecrawlApiKey) {
       console.error('FIRECRAWL_API_KEY not configured');
       return new Response(
@@ -219,11 +219,18 @@ Deno.serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log('Starting Exponent Finance markets fetch via Firecrawl...');
-    const alerts: any[] = [];
+    const alerts: {
+      pool_id: string;
+      alert_type: string;
+      previous_value: number;
+      current_value: number;
+      change_percent: number;
+      pool_name: string;
+    }[] = [];
 
     // Scrape the Exponent Income page (main pools page)
     const scrapeResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
@@ -265,7 +272,7 @@ Deno.serve(async (req) => {
       try {
         // Create a unique market address
         const marketAddress = `exponent-${pool.ptToken.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
-        
+
         // Upsert pool
         const { error: poolError } = await supabase
           .from('pendle_pools')
@@ -296,7 +303,7 @@ Deno.serve(async (req) => {
         if (poolData) {
           const poolId = poolData.id;
           const impliedApy = pool.fixedApy / 100; // Convert from percent to decimal
-          
+
           // Get previous rate for comparison
           const { data: prevRate } = await supabase
             .from('pendle_rates_history')
@@ -311,7 +318,7 @@ Deno.serve(async (req) => {
           // Underlying APY for Exponent is typically the base yield of the underlying asset
           // We estimate it as slightly lower than fixed APY
           const underlyingApyEstimate = impliedApy * 0.7;
-          
+
           await supabase
             .from('pendle_rates_history')
             .insert({
@@ -321,11 +328,11 @@ Deno.serve(async (req) => {
               liquidity: pool.liquidity,
               volume_24h: 0,
             });
-          
+
           // Check for alerts
           if (prevRate) {
             const prevImplied = Number(prevRate.implied_apy) || 0;
-            
+
             if (prevImplied > 0) {
               const impliedChange = (impliedApy - prevImplied) / prevImplied;
               if (Math.abs(impliedChange) >= IMPLIED_APY_THRESHOLD) {
@@ -340,7 +347,7 @@ Deno.serve(async (req) => {
               }
             }
           }
-          
+
           inserted++;
         }
       } catch (error) {
