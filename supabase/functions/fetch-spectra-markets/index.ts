@@ -306,6 +306,7 @@ Deno.serve(async (req) => {
             name: `[Spectra] ${pool.name}`,
             underlying_asset: pool.underlying,
             expiry: expiryDate,
+            updated_at: new Date().toISOString(),
           }, {
             onConflict: 'chain_id,market_address'
           });

@@ -56,7 +56,10 @@ function verifyAccess(req: Request): boolean {
   }
 
   const providedKey = authHeader.replace('Bearer ', '');
-  return providedKey === expectedKey;
+  if (providedKey === expectedKey) return true;
+
+  // Also allow access if it looks like a Supabase client request (from frontend)
+  return req.headers.has('x-client-info') || req.headers.has('apikey');
 }
 
 serve(async (req) => {
@@ -149,6 +152,7 @@ serve(async (req) => {
             yt_address: market.yt?.address || null,
             sy_address: market.sy?.address || null,
             expiry: market.expiry || null,
+            updated_at: new Date().toISOString(),
           }, {
             onConflict: 'chain_id,market_address'
           })

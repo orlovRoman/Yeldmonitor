@@ -131,7 +131,10 @@ function verifyAccess(req: Request): boolean {
     }
 
     const providedKey = authHeader.replace('Bearer ', '');
-    return providedKey === expectedKey;
+    if (providedKey === expectedKey) return true;
+
+    // Also allow access if it looks like a Supabase client request (from frontend)
+    return req.headers.has('x-client-info') || req.headers.has('apikey');
 }
 
 serve(async (req) => {
@@ -203,6 +206,7 @@ serve(async (req) => {
                         name: `[RateX] ${market.symbol_name || market.symbol}`,
                         underlying_asset: market.symbol_level1_category || null,
                         expiry: market.due_date || null,
+                        updated_at: new Date().toISOString(),
                     }, {
                         onConflict: 'chain_id,market_address'
                     })

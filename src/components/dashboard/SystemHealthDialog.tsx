@@ -187,7 +187,9 @@ export const SystemHealthDialog = () => {
                                             : 'Нет данных в базе'}
                                     </span>
                                     {status.apiStatus === 'error' && (
-                                        <span className="text-red-400 font-medium">Ошибка API</span>
+                                        <span className="text-red-400 font-medium cursor-help" title={status.errorMessage}>
+                                            Ошибка API
+                                        </span>
                                     )}
                                 </div>
                             </div>

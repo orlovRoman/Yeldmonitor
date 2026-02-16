@@ -283,6 +283,7 @@ Deno.serve(async (req) => {
             underlying_asset: pool.underlying,
             pt_address: pool.ptToken,
             expiry: pool.expiry || null,
+            updated_at: new Date().toISOString(),
           }, {
             onConflict: 'chain_id,market_address'
           });
