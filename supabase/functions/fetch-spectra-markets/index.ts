@@ -67,6 +67,7 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
   console.log(`[Spectra Parser] Found ${matches.length} matches for pool links`);
 
   for (const match of matches) {
+    const linkText = match[1];
     const chainSlug = match[2].toLowerCase();
     const poolAddress = match[3];
     const chainId = chainSlugToId[chainSlug] || 1;
@@ -74,7 +75,10 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
     // Find the section before this link to extract pool data
     const linkPos = match.index!;
     const sectionStart = Math.max(0, linkPos - 1500); // Look back up to 1500 chars
-    const section = markdown.slice(sectionStart, linkPos);
+    const sectionBefore = markdown.slice(sectionStart, linkPos);
+
+    // Combine section before and link text for searching, as data can be in either
+    const combinedSection = sectionBefore + "\n" + linkText;
 
     // Extract Max APY - this is the implied APY equivalent
     // Look for patterns like "Max APY\n\n14.89%" or "92.22%\n\nInterest-Bearing"
@@ -86,7 +90,7 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
 
     let maxApy = 0;
     for (const pattern of maxApyPatterns) {
-      const apyMatch = section.match(pattern);
+      const apyMatch = combinedSection.match(pattern);
       if (apyMatch) {
         maxApy = parseFloat(apyMatch[1]);
         break;
@@ -94,7 +98,7 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
     }
 
     if (maxApy === 0 || isNaN(maxApy)) {
-      console.log(`Skipping pool ${poolAddress} - no APY found`);
+      console.log(`Skipping pool ${poolAddress} - no APY found in combined section: ${combinedSection.slice(-300)}`);
       continue;
     }
 
@@ -103,11 +107,12 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
       /PT APY[\s\\n]*([0-9.]+)%/i,
       /Fixed APY[\s\\n]*([0-9.]+)%/i,
       /Base APY[\s\\n]*([0-9.]+)%/i,
+      /Interest-Bearing[\s\\n]*([0-9.]+)%/i,
     ];
 
     let underlyingApy: number | null = null;
     for (const pattern of underlyingPatterns) {
-      const underlyingMatch = section.match(pattern);
+      const underlyingMatch = combinedSection.match(pattern);
       if (underlyingMatch) {
         underlyingApy = parseFloat(underlyingMatch[1]);
         break;
@@ -118,39 +123,19 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
     const liquidityPatterns = [
       /Liquidity[\s\\n]*\$([\d,]+)/i,
       /\$([\d,]+)[\s\\n]*(?:Liquidity|Expiry)/i,
+      /\$([\d,]{2,})[\s\\n]*/,
     ];
 
     let liquidity = 0;
     for (const pattern of liquidityPatterns) {
-      const liqMatch = section.match(pattern);
+      const liqMatch = combinedSection.match(pattern);
       if (liqMatch) {
         liquidity = parseInt(liqMatch[1].replace(/,/g, ''));
         break;
       }
     }
 
-    if (liquidity === 0) {
-      // Try a more aggressive search for anything that looks like $1,234 in the section
-      const fallbackLiqMatch = section.match(/\$([\d,]{2,})/);
-      if (fallbackLiqMatch) {
-        liquidity = parseInt(fallbackLiqMatch[1].replace(/,/g, ''));
-      }
-    }
-
-    if (liquidity === 0) {
-      console.log(`[Spectra Parser] Skipping pool ${poolAddress} - no liquidity found in section: ${section.slice(-100)}`);
-      continue;
-    }
-
-    // Extract Expiry
-    const expiryMatch = section.match(/Expiry[\s\\n]*([A-Z][a-z]+ \d{1,2} \d{4})/i);
-    const expiry = expiryMatch ? expiryMatch[1] : '';
-
-    // Extract token name - look for common yield token patterns NEAR the pool link
-    // Take the closest 500 chars for token name extraction
-    const nearSection = markdown.slice(Math.max(0, linkPos - 500), linkPos);
-
-    let tokenName = '';
+    // Extract token name patterns
     const tokenPatterns = [
       /(vb[A-Z0-9]+)/i,      // Yearn vaults like vbUSDC
       /(st[A-Z0-9]+)/i,      // Staked tokens like stXRP
@@ -164,11 +149,31 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
       /(BOLD|USDN|HYPE|AUSD|USDC|jEUR[x]?|wETH|cbBTC|avax)/i,
     ];
 
+    // Extract Expiry
+    const expiryMatch = combinedSection.match(/Expiry[\s\\n]*([A-Z][a-z]+ \d{1,2} \d{4})/i);
+    const expiry = expiryMatch ? expiryMatch[1] : '';
+
+    // Extract token name - check link text first as it's most reliable now
+    let tokenName = '';
+
+    // Look in linkText first
     for (const pattern of tokenPatterns) {
-      const tokenMatch = nearSection.match(pattern);
+      const tokenMatch = linkText.match(pattern);
       if (tokenMatch) {
         tokenName = tokenMatch[1];
         break;
+      }
+    }
+
+    // If not found, look in the area before the link
+    if (!tokenName) {
+      const nearSection = markdown.slice(Math.max(0, linkPos - 500), linkPos);
+      for (const pattern of tokenPatterns) {
+        const tokenMatch = nearSection.match(pattern);
+        if (tokenMatch) {
+          tokenName = tokenMatch[1];
+          break;
+        }
       }
     }
 
