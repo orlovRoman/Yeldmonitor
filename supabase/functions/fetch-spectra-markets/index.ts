@@ -59,11 +59,12 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
   };
 
   // Split by pool link entries - each pool card ends with a link to the pool
+  // Support both /pools/ and /yield/ or other variations if they exist
   // Pattern: [link text](https://app.spectra.finance/pools/chainSlug:0xaddress)
-  const poolLinkRegex = /\[([^\]]*)\]\(https:\/\/app\.spectra\.finance\/pools\/(\w+):(0x[a-f0-9]+)\)/gi;
+  const poolLinkRegex = /\[([^\]]*)\]\(https:\/\/app\.spectra\.finance\/(?:pools|yield|liquidity)\/(\w+)[:/](0x[a-f0-9]+)\)/gi;
 
   const matches = [...markdown.matchAll(poolLinkRegex)];
-  console.log(`Found ${matches.length} pool links in markdown`);
+  console.log(`[Spectra Parser] Found ${matches.length} matches for pool links`);
 
   for (const match of matches) {
     const chainSlug = match[2].toLowerCase();
@@ -129,7 +130,15 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
     }
 
     if (liquidity === 0) {
-      console.log(`Skipping pool ${poolAddress} - no liquidity found`);
+      // Try a more aggressive search for anything that looks like $1,234 in the section
+      const fallbackLiqMatch = section.match(/\$([\d,]{2,})/);
+      if (fallbackLiqMatch) {
+        liquidity = parseInt(fallbackLiqMatch[1].replace(/,/g, ''));
+      }
+    }
+
+    if (liquidity === 0) {
+      console.log(`[Spectra Parser] Skipping pool ${poolAddress} - no liquidity found in section: ${section.slice(-100)}`);
       continue;
     }
 
@@ -256,7 +265,11 @@ Deno.serve(async (req) => {
 
     // Parse pools from markdown
     const pools = parseSpectraPools(markdown);
-    console.log(`Parsed ${pools.length} Spectra pools`);
+    console.log(`[Spectra Scraper] Parsed ${pools.length} Spectra pools`);
+
+    if (pools.length === 0) {
+      console.warn('[Spectra Scraper] No pools parsed. Markdown snippet:', markdown.slice(0, 500));
+    }
 
     // Store pools in database
     let inserted = 0;
