@@ -73,7 +73,7 @@ export const CHAIN_COLORS: Record<number, string> = {
   43114: '#E84142',
   747474: '#8B5CF6',
   501: '#9945FF', // Solana purple
-  502: '#14F195', // Solana green for RateX difference
+  502: '#3B82F6', // RateX Blue (User requested)
 };
 
 export const CHAIN_SLUGS: Record<number, string> = {
