@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 // Alert thresholds
@@ -202,9 +203,36 @@ function parseExponentPoolsAlternative(markdown: string): ExponentPool[] {
   return pools;
 }
 
+// Verify API key for scheduled job access
+function verifyAccess(req: Request): boolean {
+  const authHeader = req.headers.get('Authorization');
+  const expectedKey = Deno.env.get('EXPONENT_CRON_API_KEY');
+
+  if (!expectedKey) {
+    console.log('EXPONENT_CRON_API_KEY not configured - allowing access');
+    return true;
+  }
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const providedKey = authHeader.replace('Bearer ', '');
+    if (providedKey === expectedKey) return true;
+  }
+
+  // Also allow access if it looks like a Supabase client request (from frontend)
+  return req.headers.has('x-client-info') || req.headers.has('apikey');
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!verifyAccess(req)) {
+    console.error('Unauthorized access attempt to fetch-exponent-markets');
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   try {

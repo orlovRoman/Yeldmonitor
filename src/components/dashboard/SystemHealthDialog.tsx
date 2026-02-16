@@ -100,13 +100,30 @@ export const SystemHealthDialog = () => {
             let errorMessage = '';
 
             try {
-                if (p === 'pendle') await fetchPendle.mutateAsync();
-                else if (p === 'spectra') await fetchSpectra.mutateAsync();
-                else if (p === 'exponent') await fetchExponent.mutateAsync();
-                else if (p === 'ratex') await fetchRateX.mutateAsync();
-            } catch (err) {
+                let result;
+                if (p === 'pendle') result = await fetchPendle.mutateAsync();
+                else if (p === 'spectra') result = await fetchSpectra.mutateAsync();
+                else if (p === 'exponent') result = await fetchExponent.mutateAsync();
+                else if (p === 'ratex') result = await fetchRateX.mutateAsync();
+
+                // If result has an error property (from supabase.functions.invoke)
+                if (result?.error) {
+                    apiStatus = 'error';
+                    errorMessage = typeof result.error === 'string'
+                        ? result.error
+                        : JSON.stringify(result.error);
+                }
+            } catch (err: any) {
                 apiStatus = 'error';
-                errorMessage = err instanceof Error ? err.message : 'Unknown error';
+                // Improve error message extraction
+                if (err?.context?.status) {
+                    errorMessage = `HTTP ${err.context.status}: ${err.message}`;
+                } else if (err?.message) {
+                    errorMessage = err.message;
+                } else {
+                    errorMessage = 'Unknown error occurred';
+                }
+                console.error(`Diagnostic error for ${p}:`, err);
             }
 
             setStatuses(prev => ({

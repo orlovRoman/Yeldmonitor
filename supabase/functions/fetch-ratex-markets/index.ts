@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 const RATEX_API_URL = 'https://api.rate-x.io/';
@@ -125,19 +126,16 @@ function verifyAccess(req: Request): boolean {
         return true;
     }
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        console.error('Missing or invalid Authorization header');
-        return false;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const providedKey = authHeader.replace('Bearer ', '');
+        if (providedKey === expectedKey) return true;
     }
-
-    const providedKey = authHeader.replace('Bearer ', '');
-    if (providedKey === expectedKey) return true;
 
     // Also allow access if it looks like a Supabase client request (from frontend)
     return req.headers.has('x-client-info') || req.headers.has('apikey');
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
     if (req.method === 'OPTIONS') {
         return new Response(null, { headers: corsHeaders });
     }

@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 // Alert thresholds (same as Pendle)
@@ -210,9 +211,36 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
   return uniquePools;
 }
 
+// Verify API key for scheduled job access
+function verifyAccess(req: Request): boolean {
+  const authHeader = req.headers.get('Authorization');
+  const expectedKey = Deno.env.get('SPECTRA_CRON_API_KEY');
+
+  if (!expectedKey) {
+    console.log('SPECTRA_CRON_API_KEY not configured - allowing access');
+    return true;
+  }
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const providedKey = authHeader.replace('Bearer ', '');
+    if (providedKey === expectedKey) return true;
+  }
+
+  // Also allow access if it looks like a Supabase client request (from frontend)
+  return req.headers.has('x-client-info') || req.headers.has('apikey');
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!verifyAccess(req)) {
+    console.error('Unauthorized access attempt to fetch-spectra-markets');
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   try {
@@ -268,7 +296,10 @@ Deno.serve(async (req) => {
     }
 
     const markdown = scrapeData.data?.markdown || '';
-    console.log('Scraped markdown length:', markdown.length);
+    console.log(`[Spectra Scraper] Scraped markdown length: ${markdown.length}`);
+    if (markdown.length > 0) {
+      console.log('[Spectra Scraper] Markdown preview:', markdown.slice(0, 300));
+    }
 
     // Parse pools from markdown
     const pools = parseSpectraPools(markdown);

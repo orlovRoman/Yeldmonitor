@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 // Supported chains for Pendle (all available networks)
@@ -43,26 +44,21 @@ function verifyAccess(req: Request): boolean {
   const authHeader = req.headers.get('Authorization');
   const expectedKey = Deno.env.get('PENDLE_CRON_API_KEY');
 
-  // If no API key configured, allow access (for frontend/development)
   if (!expectedKey) {
     console.log('PENDLE_CRON_API_KEY not configured - allowing access');
     return true;
   }
 
-  // If API key is configured, require valid Bearer token
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    console.error('Missing or invalid Authorization header');
-    return false;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const providedKey = authHeader.replace('Bearer ', '');
+    if (providedKey === expectedKey) return true;
   }
-
-  const providedKey = authHeader.replace('Bearer ', '');
-  if (providedKey === expectedKey) return true;
 
   // Also allow access if it looks like a Supabase client request (from frontend)
   return req.headers.has('x-client-info') || req.headers.has('apikey');
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
