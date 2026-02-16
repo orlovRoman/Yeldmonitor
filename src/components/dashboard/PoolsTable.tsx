@@ -87,11 +87,10 @@ export function PoolsTable({ onSelectPool, selectedPoolId }: PoolsTableProps) {
             <button
               key={s}
               onClick={() => setSortBy(s)}
-              className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                sortBy === s
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground hover:text-foreground'
-              }`}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${sortBy === s
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground hover:text-foreground'
+                }`}
             >
               {s === 'liquidity' ? 'Ликвидность' : s === 'apy' ? 'APY' : 'Название'}
             </button>
@@ -116,18 +115,20 @@ export function PoolsTable({ onSelectPool, selectedPoolId }: PoolsTableProps) {
               const underlyingApy = Number(pool.latest_rate?.underlying_apy) || 0;
               const isSelected = pool.id === selectedPoolId;
               const apyDiff = impliedApy - underlyingApy;
+              const isRateX = pool.id.startsWith('ratex-');
 
               return (
                 <TableRow
                   key={pool.id}
                   onClick={() => onSelectPool(pool.id)}
-                  className={`cursor-pointer transition-colors ${
-                    isSelected ? 'bg-primary/10' : 'hover:bg-muted/50'
-                  }`}
+                  className={`cursor-pointer transition-colors ${isSelected
+                    ? (isRateX ? 'bg-blue-500/20' : 'bg-primary/10')
+                    : (isRateX ? 'bg-blue-500/5 hover:bg-blue-500/10' : 'hover:bg-muted/50')
+                    } ${isRateX ? 'border-l-2 border-l-blue-500' : ''}`}
                 >
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
-                      <span className="truncate max-w-[150px]">{pool.name}</span>
+                      <span className={`truncate max-w-[150px] ${isRateX ? 'text-blue-600 dark:text-blue-400' : ''}`}>{pool.name}</span>
                       <a
                         href={`https://app.pendle.finance/trade/pools/${pool.market_address}?chain=${pool.chain_id === 1 ? 'ethereum' : pool.chain_id === 42161 ? 'arbitrum' : 'ethereum'}`}
                         target="_blank"

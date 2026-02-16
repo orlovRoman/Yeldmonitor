@@ -69,8 +69,8 @@ export function StatsCards() {
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <span className="text-xs text-green-400">RateX:</span>
-                  <span className="text-base font-bold tabular-nums text-green-400">
+                  <span className="text-xs text-blue-400">RateX:</span>
+                  <span className="text-base font-bold tabular-nums text-blue-400">
                     {isLoading ? '—' : card.ratex}
                   </span>
                 </div>

@@ -121,18 +121,18 @@ export function NewPoolsPanel() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium truncate">
+                      <span className={`font-medium truncate ${isRateXPool(pool) ? 'text-blue-600 dark:text-blue-400' : ''}`}>
                         {pool.underlying_asset || pool.name}
                       </span>
                       <Badge
                         variant="outline"
                         className={`text-xs ${isRateXPool(pool)
-                            ? 'border-[#14F195] text-[#14F195]'
-                            : isExponentPool(pool)
-                              ? 'border-orange-500 text-orange-500'
-                              : isSpectraPool(pool)
-                                ? 'border-purple-500 text-purple-500'
-                                : 'border-primary text-primary'
+                          ? 'border-blue-500 text-blue-500'
+                          : isExponentPool(pool)
+                            ? 'border-orange-500 text-orange-500'
+                            : isSpectraPool(pool)
+                              ? 'border-purple-500 text-purple-500'
+                              : 'border-primary text-primary'
                           }`}
                       >
                         {getPlatformName(pool)}
@@ -141,7 +141,7 @@ export function NewPoolsPanel() {
                         {CHAIN_NAMES[pool.chain_id] || 'Unknown'}
                       </Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground mt-1 truncate">
+                    <p className={`text-sm mt-1 truncate ${isRateXPool(pool) ? 'text-blue-500/80' : 'text-muted-foreground'}`}>
                       {pool.name}
                     </p>
                     <div className="flex items-center gap-4 mt-2 text-sm">
