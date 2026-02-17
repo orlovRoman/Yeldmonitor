@@ -89,11 +89,13 @@ export function usePendlePools() {
       }).map(m => {
         const poolId = `ratex-${m.id || m.symbol}`;
 
-        // Find TVL for this symbol from stats
-        // API returns multiple entries (1D, 7D, 30D), we pick the one with TVL
+        // Find APY and TVL for this symbol from stats
+        // API returns multiple entries (1D, 7D, 30D), we pick the one with APY
         const stats = ratexStats.filter(s => s.symbol === m.symbol);
+        const apyStat = stats.find(s => s.apy && parseFloat(s.apy) > 0) || stats[0];
         const tvlStat = stats.find(s => s.tvl && parseFloat(s.tvl) > 0) || stats[0];
         const liquidity = tvlStat ? parseFloat(tvlStat.tvl) || 0 : 0;
+        const apyValue = apyStat ? parseFloat(apyStat.apy) || 0 : 0;
 
         return {
           id: poolId,
@@ -110,7 +112,7 @@ export function usePendlePools() {
           latest_rate: {
             id: `rate-ratex-${m.id}`,
             pool_id: poolId,
-            implied_apy: m.initial_upper_yield_range,
+            implied_apy: apyValue / 100, // Convert from percentage to decimal
             underlying_apy: m.initial_lower_yield_range,
             liquidity: liquidity,
             volume_24h: 0,
