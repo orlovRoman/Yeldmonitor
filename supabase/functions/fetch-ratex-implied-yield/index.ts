@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
 
         // Process one by one
         for (const symbol of symbols) {
-            const url = `https://app.rate-x.io/swap/${symbol}`;
+            const url = `https://app.rate-x.io/leverage/${symbol}`;
             console.log(`Scraping: ${url}`);
 
             try {
