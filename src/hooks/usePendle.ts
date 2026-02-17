@@ -44,6 +44,34 @@ export function usePendlePools() {
         console.error('RateX stats fetch error:', ratexStatsResult.reason);
       }
 
+      // Fetch scraped Implied Yields from RateX via FIRECRAWL
+      let ratexImpliedYields: Array<{ symbol: string, impliedYield: number }> = [];
+      try {
+        const symbols = ratexMarkets.map(m => m.symbol).slice(0, 20); // Limit to 20 to avoid rate limits
+        if (symbols.length > 0) {
+          const impliedYieldResponse = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fetch-ratex-implied-yield`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+              },
+              body: JSON.stringify({ symbols }),
+            }
+          );
+          if (impliedYieldResponse.ok) {
+            const yieldData = await impliedYieldResponse.json();
+            if (yieldData.success && yieldData.data) {
+              ratexImpliedYields = yieldData.data;
+              console.log(`[Debug] Fetched ${ratexImpliedYields.length} scraped implied yields`);
+            }
+          }
+        }
+      } catch (yieldError) {
+        console.error('Failed to fetch RateX implied yields:', yieldError);
+      }
+
       // Filter active Supabase pools
       const now = new Date();
       const activeSupabasePools = pools.filter(pool => {
@@ -89,13 +117,15 @@ export function usePendlePools() {
       }).map(m => {
         const poolId = `ratex-${m.id || m.symbol}`;
 
-        // Find APY and TVL for this symbol from stats
-        // API returns multiple entries (1D, 7D, 30D), we pick the one with APY
+        // Find TVL for this symbol from stats
+        // API returns multiple entries (1D, 7D, 30D), we pick the one with TVL
         const stats = ratexStats.filter(s => s.symbol === m.symbol);
-        const apyStat = stats.find(s => s.apy && parseFloat(s.apy) > 0) || stats[0];
         const tvlStat = stats.find(s => s.tvl && parseFloat(s.tvl) > 0) || stats[0];
         const liquidity = tvlStat ? parseFloat(tvlStat.tvl) || 0 : 0;
-        const apyValue = apyStat ? parseFloat(apyStat.apy) || 0 : 0;
+
+        // Get scraped implied yield if available
+        const scrapedYield = ratexImpliedYields.find(y => y.symbol === m.symbol);
+        const impliedYield = scrapedYield ? scrapedYield.impliedYield : m.initial_upper_yield_range;
 
         return {
           id: poolId,
@@ -112,7 +142,7 @@ export function usePendlePools() {
           latest_rate: {
             id: `rate-ratex-${m.id}`,
             pool_id: poolId,
-            implied_apy: apyValue / 100, // Convert from percentage to decimal
+            implied_apy: impliedYield,
             underlying_apy: m.initial_lower_yield_range,
             liquidity: liquidity,
             volume_24h: 0,
