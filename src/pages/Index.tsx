@@ -4,6 +4,7 @@ import { StatsCards } from '@/components/dashboard/StatsCards';
 import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
 import { NewPoolsPanel } from '@/components/dashboard/NewPoolsPanel';
 import { ImpliedDropsPanel } from '@/components/dashboard/ImpliedDropsPanel';
+import { LowestYieldPanel } from '@/components/dashboard/LowestYieldPanel';
 import {
   useFetchMarkets,
   useFetchSpectraMarkets,
@@ -77,10 +78,11 @@ const Index = () => {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6 space-y-6">
         <StatsCards />
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
           <AlertsPanel />
           <ImpliedDropsPanel />
           <NewPoolsPanel />
+          <LowestYieldPanel />
         </div>
       </main>
 
