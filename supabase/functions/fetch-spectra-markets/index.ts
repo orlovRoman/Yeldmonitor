@@ -59,27 +59,32 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
     'hyperevm': 999,
   };
 
-  // Split by pool link entries - each pool card ends with a link to the pool
-  // Support both /pools/ and /yield/ or other variations if they exist
-  // Pattern: [link text](https://app.spectra.finance/pools/chainSlug:0xaddress)
-  const poolLinkRegex = /\[([^\]]*)\]\(https:\/\/app\.spectra\.finance\/(?:pools|yield|liquidity)\/(\w+)[:/](0x[a-f0-9]+)\)/gi;
+  // New format: Find pool links directly from URLs in the markdown
+  // Format: https://app.spectra.finance/pools/chainSlug:0xaddress
+  // The markdown may be broken, so we search for URLs directly
+  const poolUrlRegex = /https:\/\/app\.spectra\.finance\/(?:pools|yield|liquidity)\/(\w+)[:/](0x[a-f0-9]+)/gi;
 
-  const matches = [...markdown.matchAll(poolLinkRegex)];
-  console.log(`[Spectra Parser] Found ${matches.length} matches for pool links`);
+  const matches = [...markdown.matchAll(poolUrlRegex)];
+  console.log(`[Spectra Parser] Found ${matches.length} pool URL matches`);
 
   for (const match of matches) {
-    const linkText = match[1];
-    const chainSlug = match[2].toLowerCase();
-    const poolAddress = match[3];
+    // New format: match[0] is full URL, match[1] is chainSlug, match[2] is poolAddress
+    const fullUrl = match[0];
+    const chainSlug = match[1].toLowerCase();
+    const poolAddress = match[2];
     const chainId = chainSlugToId[chainSlug] || 1;
 
-    // Find the section before this link to extract pool data
-    const linkPos = match.index!;
-    const sectionStart = Math.max(0, linkPos - 1500); // Look back up to 1500 chars
-    const sectionBefore = markdown.slice(sectionStart, linkPos);
+    // Find the section before this URL to extract pool data
+    const urlPos = match.index!;
+    const sectionStart = Math.max(0, urlPos - 2000); // Look back up to 2000 chars
+    const sectionBefore = markdown.slice(sectionStart, urlPos + 200); // And some forward
 
-    // Combine section before and link text for searching, as data can be in either
-    const combinedSection = sectionBefore + "\n" + linkText;
+    // Also look a bit after the URL for additional data
+    const sectionAfterStart = urlPos;
+    const sectionAfter = markdown.slice(sectionAfterStart, sectionAfterStart + 500);
+
+    // Combine sections for searching
+    const combinedSection = sectionBefore + "\n" + sectionAfter;
 
     // Extract Max APY - this is the implied APY equivalent
     // Look for patterns like "Max APY\n\n14.89%" or "92.22%\n\nInterest-Bearing"
@@ -150,33 +155,18 @@ function parseSpectraPools(markdown: string): SpectraPool[] {
       /\b(BOLD|USDN|HYPE|AUSD|USDC|jEUR[x]?|wETH|cbBTC|avax)\b/i,
     ];
 
-    // Extract Expiry - prioritize search in linkText
+    // Extract Expiry - use combined section
     let expiry = '';
-    const expiryMatch = linkText.match(/Expiry[\s\\n]*([A-Z][a-z]+ \d{1,2} \d{4})/i) ||
-      sectionBefore.match(/Expiry[\s\\n]*([A-Z][a-z]+ \d{1,2} \d{4})/i);
+    const expiryMatch = combinedSection.match(/Expiry[\s\\n]*([A-Z][a-z]+ \d{1,2} \d{4})/i);
     if (expiryMatch) expiry = expiryMatch[1];
 
-    // Extract token name - check link text first as it's most reliable now
+    // Extract token name - search in combined section
     let tokenName = '';
-
-    // Look in linkText first
     for (const pattern of tokenPatterns) {
-      const tokenMatch = linkText.match(pattern);
+      const tokenMatch = combinedSection.match(pattern);
       if (tokenMatch) {
         tokenName = tokenMatch[1];
         break;
-      }
-    }
-
-    // If not found, look in the area before the link
-    if (!tokenName) {
-      const nearSection = markdown.slice(Math.max(0, linkPos - 500), linkPos);
-      for (const pattern of tokenPatterns) {
-        const tokenMatch = nearSection.match(pattern);
-        if (tokenMatch) {
-          tokenName = tokenMatch[1];
-          break;
-        }
       }
     }
 
