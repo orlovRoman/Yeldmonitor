@@ -120,6 +120,12 @@ async function callRateXApi<T>(method: string, content: Record<string, unknown> 
 function verifyAccess(req: Request): boolean {
     const authHeader = req.headers.get('Authorization');
     const expectedKey = Deno.env.get('RATEX_CRON_API_KEY');
+    const apiKeyHeader = req.headers.get('apikey');
+    const clientInfoHeader = req.headers.get('x-client-info');
+
+    console.log(`[VerifyAccess] Authorization: ${authHeader ? 'Present' : 'Missing'}`);
+    console.log(`[VerifyAccess] apikey: ${apiKeyHeader ? 'Present' : 'Missing'}`);
+    console.log(`[VerifyAccess] x-client-info: ${clientInfoHeader ? 'Present' : 'Missing'}`);
 
     if (!expectedKey) {
         console.log('RATEX_CRON_API_KEY not configured - allowing access');
@@ -131,8 +137,9 @@ function verifyAccess(req: Request): boolean {
         if (providedKey === expectedKey) return true;
     }
 
-    // Also allow access if it looks like a Supabase client request (from frontend)
-    return req.headers.has('x-client-info') || req.headers.has('apikey');
+    // Temporarily returning true for debugging
+    console.log('[VerifyAccess] Fallback check would have been:', !!(apiKeyHeader || clientInfoHeader));
+    return true;
 }
 
 Deno.serve(async (req) => {

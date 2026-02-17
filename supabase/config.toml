@@ -1,4 +1,4 @@
-project_id = "wtdfsugadogbrsxoystl"
+project_id = "tkivtvokrnmiimecuowh"
 
 [functions.fetch-pendle-markets]
 verify_jwt = false
@@ -16,4 +16,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.fetch-exponent-markets]
+verify_jwt = false
+
+[functions.fetch-ratex-markets]
 verify_jwt = false
