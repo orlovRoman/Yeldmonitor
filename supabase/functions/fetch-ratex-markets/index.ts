@@ -179,6 +179,23 @@ Deno.serve(async (req) => {
             console.error('Failed to fetch TVL/Volume stats:', err);
         }
 
+        // 2.5 Fetch APY stats from querySolanaTermRewardRate
+        interface RateXRewardRate {
+            symbol: string;
+            term: string;
+            apy: string;
+            apr: string;
+            tvl: string;
+        }
+        let apyStats: RateXRewardRate[] = [];
+        try {
+            const apyResponse = await callRateXApi<RateXRewardRate[]>('querySolanaTermRewardRate');
+            apyStats = Array.isArray(apyResponse.data) ? apyResponse.data : [];
+            console.log(`Fetched ${apyStats.length} APY stats entries`);
+        } catch (err) {
+            console.error('Failed to fetch APY stats:', err);
+        }
+
         // 3. Filter active (non-expired, non-deleted) markets
         const now = new Date();
         const activeMarkets = allMarkets.filter((market) => {
@@ -201,6 +218,25 @@ Deno.serve(async (req) => {
         // 4. Process each active market
         for (const market of activeMarkets) {
             try {
+                // === COMPUTE IMPLIED YIELD FROM sum_price + due_date ===
+                // Matches rate-x.io formula: implied_yield = sum_price * (365 / days_to_expiry)
+                let scrapedImpliedYield: number | null = null;
+                const sumPrice = market.sum_price || 0;
+                if (sumPrice > 0 && market.due_date) {
+                    try {
+                        const dateStr = market.due_date.replace(' 24:00:00', ' 23:59:59');
+                        const dueDate = new Date(dateStr);
+                        const daysToExpiry = (dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+                        if (daysToExpiry > 0) {
+                            scrapedImpliedYield = sumPrice * (365 / daysToExpiry);
+                            console.log(`[RateX] ${market.symbol}: sum_price=${sumPrice}, days=${daysToExpiry.toFixed(1)}, implied=${(scrapedImpliedYield * 100).toFixed(3)}%`);
+                        }
+                    } catch (e) {
+                        console.warn(`[RateX] Failed to compute yield for ${market.symbol}:`, e);
+                    }
+                }
+                const scrapedRealYield: number | null = null;
+
                 // Upsert pool into main pendle_pools table for dashboard unification
                 const marketAddress = `ratex-${market.symbol}`;
                 const { data: poolData, error: poolError } = await supabase
@@ -225,10 +261,22 @@ Deno.serve(async (req) => {
 
                 const poolId = poolData.id;
                 const currentPrice = market.sum_price || 0;
-                // RateX Implied APY is approximately upper_yield
-                const currentImpliedApy = (market.initial_upper_yield_range || 0) / 100;
-                // RateX Underlying APY is approximately lower_yield
-                const currentUnderlyingApy = (market.initial_lower_yield_range || 0) / 100;
+
+                // Find APY from stats API for this symbol
+                const symbolStats = apyStats.filter(s => s.symbol === market.symbol);
+                const tvlStat = symbolStats.find(s => s.tvl && parseFloat(s.tvl) > 0) || symbolStats[0];
+                const apyFromStats = tvlStat && tvlStat.apy ? parseFloat(tvlStat.apy) / 100 : 0;
+                const aprFromStats = tvlStat && tvlStat.apr ? parseFloat(tvlStat.apr) / 100 : 0;
+                const liquidityFromStats = tvlStat && tvlStat.tvl ? parseFloat(tvlStat.tvl) : 0;
+
+                // Use scraped Implied Yield if available, otherwise APY from stats, otherwise fallback to API value
+                const currentImpliedApy = scrapedImpliedYield !== null
+                    ? scrapedImpliedYield
+                    : (apyFromStats || (market.initial_upper_yield_range || 0) / 100);
+                // Use scraped Real Yield if available, otherwise APR from stats, otherwise fallback to API value
+                const currentUnderlyingApy = scrapedRealYield !== null
+                    ? scrapedRealYield
+                    : (aprFromStats || (market.initial_lower_yield_range || 0) / 100);
 
                 // Sync with original ratex_pools for backwards compatibility if needed
                 await supabase
@@ -269,7 +317,7 @@ Deno.serve(async (req) => {
                         pool_id: poolId,
                         implied_apy: currentImpliedApy,
                         underlying_apy: currentUnderlyingApy,
-                        liquidity: 0, // Individual TVL not in querySymbol, fixed separately in useRateX
+                        liquidity: liquidityFromStats,
                         volume_24h: 0,
                     });
 
@@ -284,7 +332,19 @@ Deno.serve(async (req) => {
                         earn_w: market.earn_w,
                     }).catch(() => { }); // Ignore error as we shift to unified
 
-                // Check for APY change alerts (Unified)
+                // Алерт о новом рынке — пул появился впервые
+                if (!prevRate) {
+                    alerts.push({
+                        pool_id: poolId,
+                        alert_type: 'new_market',
+                        previous_value: 0,
+                        current_value: currentImpliedApy,
+                        change_percent: 0,
+                        pool_name: market.symbol_name,
+                    });
+                }
+
+                // Проверка изменений APY
                 if (prevRate) {
                     const prevImplied = Number(prevRate.implied_apy) || 0;
 

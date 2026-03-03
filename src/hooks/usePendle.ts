@@ -44,33 +44,6 @@ export function usePendlePools() {
         console.error('RateX stats fetch error:', ratexStatsResult.reason);
       }
 
-      // Fetch scraped Implied Yields from RateX via FIRECRAWL
-      let ratexImpliedYields: Array<{ symbol: string, impliedYield: number }> = [];
-      try {
-        const symbols = ratexMarkets.map(m => m.symbol).slice(0, 20); // Limit to 20 to avoid rate limits
-        if (symbols.length > 0) {
-          const impliedYieldResponse = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fetch-ratex-implied-yield`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-              },
-              body: JSON.stringify({ symbols }),
-            }
-          );
-          if (impliedYieldResponse.ok) {
-            const yieldData = await impliedYieldResponse.json();
-            if (yieldData.success && yieldData.data) {
-              ratexImpliedYields = yieldData.data;
-              console.log(`[Debug] Fetched ${ratexImpliedYields.length} scraped implied yields`);
-            }
-          }
-        }
-      } catch (yieldError) {
-        console.error('Failed to fetch RateX implied yields:', yieldError);
-      }
 
       // Filter active Supabase pools
       const now = new Date();
@@ -114,18 +87,28 @@ export function usePendlePools() {
         } catch (e) {
           return true;
         }
-      }).map(m => {
+      });
+
+      console.log(`[Debug] Active RateX pools count: ${activeRatexPools.length}`);
+      console.log(`[Debug] Active RateX symbols:`, activeRatexPools.map(m => m.symbol));
+
+
+
+      const ratexPoolsWithRates = activeRatexPools.map(m => {
         const poolId = `ratex-${m.id || m.symbol}`;
 
-        // Find TVL for this symbol from stats
-        // API returns multiple entries (1D, 7D, 30D), we pick the one with TVL
+        // Find TVL for this symbol from querySolanaTermRewardRate stats
         const stats = ratexStats.filter(s => s.symbol === m.symbol);
         const tvlStat = stats.find(s => s.tvl && parseFloat(s.tvl) > 0) || stats[0];
         const liquidity = tvlStat ? parseFloat(tvlStat.tvl) || 0 : 0;
+        const aprFromStats = tvlStat && tvlStat.apr ? parseFloat(tvlStat.apr) / 100 : 0;
 
-        // Get scraped implied yield if available
-        const scrapedYield = ratexImpliedYields.find(y => y.symbol === m.symbol);
-        const impliedYield = scrapedYield ? scrapedYield.impliedYield : m.initial_upper_yield_range;
+        // Use initial_lower_yield_range as implied yield (static pool parameter, close to real market value)
+        // e.g. sUSDu-2603: initial_lower=0.12=12%, site shows 12.045%
+        // TODO: find the correct dynamic API method for current market implied yield
+        const impliedYield = m.initial_lower_yield_range || 0;
+
+        console.log(`[RateX] ${m.symbol}: implied=${(impliedYield * 100).toFixed(2)}% (initial_lower_yield_range)`);
 
         return {
           id: poolId,
@@ -143,7 +126,7 @@ export function usePendlePools() {
             id: `rate-ratex-${m.id}`,
             pool_id: poolId,
             implied_apy: impliedYield,
-            underlying_apy: m.initial_lower_yield_range,
+            underlying_apy: aprFromStats || (m.initial_lower_yield_range || 0) / 100,
             liquidity: liquidity,
             volume_24h: 0,
             recorded_at: new Date().toISOString(),
@@ -151,10 +134,16 @@ export function usePendlePools() {
         } as PoolWithLatestRate;
       });
 
-      // Combine all pools
-      console.log(`[Debug] Combining pools: Supabase=${supabasePoolsWithRates.length}, RateX=${activeRatexPools.length}`);
+      // Combine all pools — exclude RateX pools from Supabase (stale data with 0% APY)
+      // RateX pools are served live from the API above
+      const nonRatexSupabasePools = supabasePoolsWithRates.filter(pool => {
+        const addr = pool.market_address || '';
+        return !addr.startsWith('ratex-') && pool.chain_id !== 502;
+      });
 
-      const finalPools = [...supabasePoolsWithRates, ...activeRatexPools];
+      console.log(`[Debug] Combining pools: Supabase(non-ratex)=${nonRatexSupabasePools.length}, RateX(live)=${ratexPoolsWithRates.length}`);
+
+      const finalPools = [...nonRatexSupabasePools, ...ratexPoolsWithRates];
       console.log(`[Debug] Final combined pools count: ${finalPools.length}`);
       return finalPools;
     },

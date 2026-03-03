@@ -6,227 +6,105 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-// Alert thresholds (same as Pendle)
-const IMPLIED_APY_THRESHOLD = 0.01; // 1% change threshold for implied APY
-const ALERT_COOLDOWN_HOURS = 1; // Prevent duplicate alerts within this window
+const IMPLIED_APY_THRESHOLD = 0.01;
+const ALERT_COOLDOWN_HOURS = 1;
 
-// Spectra Finance supported chains
-const SPECTRA_CHAINS: Record<number, string> = {
-  1: 'Ethereum',
-  42161: 'Arbitrum',
-  10: 'Optimism',
-  8453: 'Base',
-  146: 'Sonic',
-  43114: 'Avalanche',
-  56: 'BNB Chain',
-  14: 'Flare',
-  747474: 'Katana',
-  999: 'HyperEVM',
+const CHAIN_NAMES: Record<number, string> = {
+  1: 'Ethereum', 42161: 'Arbitrum', 10: 'Optimism', 8453: 'Base',
+  146: 'Sonic', 43114: 'Avalanche', 56: 'BNB Chain', 14: 'Flare',
+  747474: 'Katana', 999: 'HyperEVM', 43111: 'Hemi',
 };
 
 interface SpectraPool {
+  address: string;
   name: string;
-  underlying: string;
-  maxApy: number;
-  underlyingApy: number | null;
-  liquidity: number;
-  expiry: string;
   chainId: number;
-  chainName: string;
-  poolAddress: string;
+  tvl: { ibt: number; underlying: number; usd: number };
+  ptApy: number;
+  impliedApy: number;
+  lpApy: any;
+  maturity: number;
+  ibt?: { symbol: string; address: string };
+  underlying?: { symbol: string; address: string };
+  yt?: { symbol: string; address: string };
+  pools?: SpectraPool[];
+  // Поля, пробрасываемые из родительского объекта
+  _parentUnderlying?: string;
+  _parentIbt?: string;
 }
 
-// Parse pool data from Firecrawl markdown - improved version
-function parseSpectraPools(markdown: string): SpectraPool[] {
-  const pools: SpectraPool[] = [];
+/**
+ * Загружает данные Spectra из __NEXT_DATA__ (Next.js SSR).
+ * Не требует Firecrawl — прямой HTTP-запрос к HTML и парсинг JSON.
+ */
+async function fetchSpectraPoolsFromNextData(): Promise<SpectraPool[]> {
+  console.log('[Spectra] Загружаем HTML страницы trade-yield...');
+  const response = await fetch('https://app.spectra.finance/trade-yield', {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'text/html',
+    },
+  });
 
-  // Chain slug to chain ID mapping
-  const chainSlugToId: Record<string, number> = {
-    'eth': 1,
-    'ethereum': 1,
-    'arbitrum': 42161,
-    'arb': 42161,
-    'op': 10,
-    'optimism': 10,
-    'base': 8453,
-    'sonic': 146,
-    'avax': 43114,
-    'avalanche': 43114,
-    'bsc': 56,
-    'bnb': 56,
-    'flare': 14,
-    'katana': 747474,
-    'hyperevm': 999,
-  };
-
-  // New format: Find pool links directly from URLs in the markdown
-  // Format: https://app.spectra.finance/pools/chainSlug:0xaddress
-  // The markdown may be broken, so we search for URLs directly
-  const poolUrlRegex = /https:\/\/app\.spectra\.finance\/(?:pools|yield|liquidity)\/(\w+)[:/](0x[a-f0-9]+)/gi;
-
-  const matches = [...markdown.matchAll(poolUrlRegex)];
-  console.log(`[Spectra Parser] Found ${matches.length} pool URL matches`);
-
-  for (const match of matches) {
-    // New format: match[0] is full URL, match[1] is chainSlug, match[2] is poolAddress
-    const fullUrl = match[0];
-    const chainSlug = match[1].toLowerCase();
-    const poolAddress = match[2];
-    const chainId = chainSlugToId[chainSlug] || 1;
-
-    // Find the section before this URL to extract pool data
-    const urlPos = match.index!;
-    const sectionStart = Math.max(0, urlPos - 2000); // Look back up to 2000 chars
-    const sectionBefore = markdown.slice(sectionStart, urlPos + 200); // And some forward
-
-    // Also look a bit after the URL for additional data
-    const sectionAfterStart = urlPos;
-    const sectionAfter = markdown.slice(sectionAfterStart, sectionAfterStart + 500);
-
-    // Combine sections for searching
-    const combinedSection = sectionBefore + "\n" + sectionAfter;
-
-    // Extract Max APY - this is the implied APY equivalent
-    // Look for patterns like "Max APY\n\n14.89%" or "92.22%\n\nInterest-Bearing"
-    const maxApyPatterns = [
-      /Max APY[\s\\n]*([0-9.]+)%/i,
-      /([0-9.]+)%[\s\\n]*\+?[\s\\n]*Interest-Bearing/i,
-      /APY[\s\\n]*([0-9.]+)%/i,
-    ];
-
-    let maxApy = 0;
-    for (const pattern of maxApyPatterns) {
-      const apyMatch = combinedSection.match(pattern);
-      if (apyMatch) {
-        maxApy = parseFloat(apyMatch[1]);
-        break;
-      }
-    }
-
-    if (maxApy === 0 || isNaN(maxApy)) {
-      console.log(`Skipping pool ${poolAddress} - no APY found in combined section: ${combinedSection.slice(-300)}`);
-      continue;
-    }
-
-    // Extract underlying APY (PT APY, Fixed APY, Base APY)
-    const underlyingPatterns = [
-      /PT APY[\s\\n]*([0-9.]+)%/i,
-      /Fixed APY[\s\\n]*([0-9.]+)%/i,
-      /Base APY[\s\\n]*([0-9.]+)%/i,
-      /Interest-Bearing[\s\\n]*([0-9.]+)%/i,
-    ];
-
-    let underlyingApy: number | null = null;
-    for (const pattern of underlyingPatterns) {
-      const underlyingMatch = combinedSection.match(pattern);
-      if (underlyingMatch) {
-        underlyingApy = parseFloat(underlyingMatch[1]);
-        break;
-      }
-    }
-
-    // Extract Liquidity
-    const liquidityPatterns = [
-      /Liquidity[\s\\n]*\$([\d,]+)/i,
-      /\$([\d,]+)[\s\\n]*(?:Liquidity|Expiry)/i,
-      /\$([\d,]{2,})[\s\\n]*/,
-    ];
-
-    let liquidity = 0;
-    for (const pattern of liquidityPatterns) {
-      const liqMatch = combinedSection.match(pattern);
-      if (liqMatch) {
-        liquidity = parseInt(liqMatch[1].replace(/,/g, ''));
-        break;
-      }
-    }
-
-    // Extract token name patterns
-    const tokenPatterns = [
-      /\b(vb[A-Z0-9]+)\b/i,      // Yearn vaults like vbUSDC
-      /\b(st[A-Z0-9]+)\b/i,      // Staked tokens like stXRP
-      /\b(sav[A-Z0-9]+)\b/i,     // Savings tokens
-      /\b(yv[A-Z0-9]+)\b/i,      // Yearn vaults
-      /\b(ynETH[\w-/]*)\b/i,     // ynETH variants
-      /\b(sj[A-Z0-9]+)\b/i,      // SJ tokens
-      /\b(av[A-Z0-9]+)\b/i,      // Avalanche tokens
-      /\b(re[A-Z0-9]+)\b/i,      // reETH etc
-      /\b(hb[A-Z0-9]+)\b/i,      // HB tokens
-      /\b(BOLD|USDN|HYPE|AUSD|USDC|jEUR[x]?|wETH|cbBTC|avax)\b/i,
-    ];
-
-    // Extract Expiry - use combined section
-    let expiry = '';
-    const expiryMatch = combinedSection.match(/Expiry[\s\\n]*([A-Z][a-z]+ \d{1,2} \d{4})/i);
-    if (expiryMatch) expiry = expiryMatch[1];
-
-    // Extract token name - search in combined section
-    let tokenName = '';
-    for (const pattern of tokenPatterns) {
-      const tokenMatch = combinedSection.match(pattern);
-      if (tokenMatch) {
-        tokenName = tokenMatch[1];
-        break;
-      }
-    }
-
-    if (!tokenName) {
-      tokenName = `Pool-${poolAddress.slice(2, 10)}`;
-    }
-
-    // Cap max APY at 200% to avoid parsing errors
-    const finalMaxApy = maxApy > 200 ? 200 : maxApy;
-
-    pools.push({
-      name: tokenName,
-      underlying: tokenName.replace(/[^a-zA-Z0-9]/g, ''),
-      maxApy: finalMaxApy,
-      underlyingApy,
-      liquidity,
-      expiry,
-      chainId,
-      chainName: SPECTRA_CHAINS[chainId] || 'Unknown',
-      poolAddress,
-    });
-
-    console.log(`Parsed pool: ${tokenName} on ${SPECTRA_CHAINS[chainId]}, APY: ${finalMaxApy}%, Liquidity: $${liquidity}`);
+  if (!response.ok) {
+    throw new Error(`Spectra HTML: статус ${response.status}`);
   }
 
-  // Remove duplicates based on poolAddress (same pool might appear multiple times)
-  const uniquePools = pools.filter((pool, index, self) =>
-    index === self.findIndex(p => p.poolAddress === pool.poolAddress)
-  );
+  const html = await response.text();
+  console.log(`[Spectra] HTML загружен: ${html.length} символов`);
 
-  console.log(`Parsed ${uniquePools.length} unique pools from Spectra markdown (${pools.length} total matches)`);
-  return uniquePools;
+  // Извлекаем JSON из тега <script id="__NEXT_DATA__">
+  const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!nextDataMatch) {
+    throw new Error('Не удалось найти __NEXT_DATA__ в HTML');
+  }
+
+  const nextData = JSON.parse(nextDataMatch[1]);
+  const queries = nextData?.props?.pageProps?.dehydratedState?.queries || [];
+  console.log(`[Spectra] Найдено ${queries.length} запросов в dehydratedState`);
+
+  // Находим запрос с пулами — массив с данными
+  let allPools: SpectraPool[] = [];
+  for (const query of queries) {
+    const data = query?.state?.data;
+    if (Array.isArray(data) && data.length > 3) {
+      // Spectra хранит маркеты как верхнеуровневые объекты с вложенным pools[]
+      // underlying и ibt — на уровне родителя, их нужно пробросить в дочерние пулы
+      for (const item of data) {
+        const parentUnderlying = item.underlying?.symbol || '';
+        const parentIbt = item.ibt?.symbol || '';
+
+        if (item.pools && Array.isArray(item.pools)) {
+          for (const pool of item.pools) {
+            pool._parentUnderlying = parentUnderlying;
+            pool._parentIbt = parentIbt;
+          }
+          allPools.push(...item.pools);
+        } else if (item.address && (item.impliedApy !== undefined || item.ptApy !== undefined)) {
+          item._parentUnderlying = parentUnderlying;
+          item._parentIbt = parentIbt;
+          allPools.push(item);
+        }
+      }
+    }
+  }
+
+  console.log(`[Spectra] Извлечено ${allPools.length} пулов из __NEXT_DATA__`);
+  return allPools;
 }
 
-// Verify API key for scheduled job access
 function verifyAccess(req: Request): boolean {
   const authHeader = req.headers.get('Authorization');
   const expectedKey = Deno.env.get('SPECTRA_CRON_API_KEY');
-
-  if (!expectedKey) {
-    console.log('SPECTRA_CRON_API_KEY not configured - allowing access');
-    return true;
-  }
-
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const providedKey = authHeader.replace('Bearer ', '');
-    if (providedKey === expectedKey) return true;
-  }
-
-  // Also allow access if it looks like a Supabase client request (from frontend)
+  if (!expectedKey) return true;
+  if (authHeader?.startsWith('Bearer ') && authHeader.replace('Bearer ', '') === expectedKey) return true;
   return req.headers.has('x-client-info') || req.headers.has('apikey');
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   if (!verifyAccess(req)) {
-    console.error('Unauthorized access attempt to fetch-spectra-markets');
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -236,228 +114,189 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
-
-    if (!firecrawlApiKey) {
-      console.error('FIRECRAWL_API_KEY not configured');
-      return new Response(
-        JSON.stringify({ success: false, error: 'Firecrawl connector not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('Starting Spectra Finance markets fetch via Firecrawl...');
+    // Загружаем пулы напрямую из Next.js SSR данных (без Firecrawl)
+    const pools = await fetchSpectraPoolsFromNextData();
+
+    if (pools.length === 0) {
+      return new Response(JSON.stringify({
+        success: false, error: 'Не удалось распарсить пулы из __NEXT_DATA__',
+      }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     const alerts: {
       pool_id: string;
       alert_type: string;
       previous_value: number;
       current_value: number;
       change_percent: number;
-      pool_name: string;
-      chain_name: string;
     }[] = [];
+    let inserted = 0, alertsCreated = 0;
 
-    // Scrape the Spectra pools page
-    const scrapeResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${firecrawlApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        url: 'https://app.spectra.finance/pools',
-        formats: ['markdown'],
-        onlyMainContent: true,
-        waitFor: 15000,
-        timeout: 60000,
-      }),
-    });
-
-    const scrapeData = await scrapeResponse.json();
-
-    if (!scrapeResponse.ok || !scrapeData.success) {
-      console.error('Firecrawl scrape failed:', scrapeData);
-      return new Response(
-        JSON.stringify({ success: false, error: scrapeData.error || 'Failed to scrape Spectra' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const markdown = scrapeData.data?.markdown || '';
-    console.log(`[Spectra Scraper] Scraped markdown length: ${markdown.length}`);
-    if (markdown.length > 0) {
-      console.log('[Spectra Scraper] Markdown preview:', markdown.slice(0, 300));
-    }
-
-    // Parse pools from markdown
-    const pools = parseSpectraPools(markdown);
-    console.log(`[Spectra Scraper] Parsed ${pools.length} Spectra pools`);
-
-    if (pools.length === 0) {
-      console.warn('[Spectra Scraper] No pools parsed. Markdown snippet:', markdown.slice(0, 500));
-    }
-
-    // Store pools in database
-    let inserted = 0;
-    let alertsCreated = 0;
+    // Собираем все актуальные market_address для последующей очистки
+    const activeMarketAddresses: string[] = [];
 
     for (const pool of pools) {
       try {
-        // Create a unique market address based on pool address and chain
-        const marketAddress = `spectra-${pool.chainId}-${pool.poolAddress.slice(2, 14).toLowerCase()}`;
+        const chainId = pool.chainId || 1;
+        const chainName = CHAIN_NAMES[chainId] || `Chain-${chainId}`;
+        const marketAddress = `spectra-${chainId}-${pool.address.replace('0x', '').slice(0, 12).toLowerCase()}`;
 
-        // Parse expiry date
+        activeMarketAddresses.push(marketAddress);
+
+        // impliedApy из Spectra приходит в процентах (напр. 9.61 = 9.61%)
+        const impliedApy = (pool.impliedApy || pool.ptApy || 0) / 100;
+        const liquidity = pool.tvl?.usd || 0;
+
+        // Дата экспирации из unix timestamp (секунды)
         let expiryDate: string | null = null;
-        if (pool.expiry) {
-          try {
-            expiryDate = new Date(pool.expiry).toISOString();
-          } catch {
-            console.warn('Could not parse expiry date:', pool.expiry);
-          }
+        if (pool.maturity) {
+          expiryDate = new Date(pool.maturity * 1000).toISOString();
         }
 
-        // Upsert pool
-        const { error: poolError } = await supabase
-          .from('pendle_pools')
-          .upsert({
-            chain_id: pool.chainId,
-            market_address: marketAddress,
-            name: `[Spectra] ${pool.name}`,
-            underlying_asset: pool.underlying,
-            expiry: expiryDate,
-            updated_at: new Date().toISOString(),
-          }, {
-            onConflict: 'chain_id,market_address'
-          });
-
-        if (poolError) {
-          console.error(`Error upserting Spectra pool ${pool.name}:`, poolError);
-          continue;
+        // Название токена: сначала из родительского underlying, потом ibt, потом парсим из name
+        let tokenName = pool._parentUnderlying || pool._parentIbt || '';
+        if (!tokenName && pool.name) {
+          // Формат: "Principal Token: sw-WUSDN(USDN) 2027/01/12" → извлекаем USDN
+          const parenMatch = pool.name.match(/\(([^)]+)\)/);
+          const colonMatch = pool.name.match(/:\s*([^(\s]+)/);
+          tokenName = parenMatch?.[1] || colonMatch?.[1] || pool.name;
         }
+        if (!tokenName) tokenName = 'Unknown';
 
-        // Get the pool ID
+        const { error: poolError } = await supabase.from('pendle_pools').upsert({
+          chain_id: chainId,
+          market_address: marketAddress,
+          name: `[Spectra] ${tokenName}`,
+          underlying_asset: tokenName,
+          expiry: expiryDate,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'chain_id,market_address' });
+
+        if (poolError) { console.error(`Ошибка upsert для ${tokenName}:`, poolError); continue; }
+
         const { data: poolData } = await supabase
-          .from('pendle_pools')
-          .select('id')
-          .eq('chain_id', pool.chainId)
-          .eq('market_address', marketAddress)
+          .from('pendle_pools').select('id')
+          .eq('chain_id', chainId).eq('market_address', marketAddress)
           .single();
 
-        if (poolData) {
-          const poolId = poolData.id;
-          const impliedApy = pool.maxApy / 100; // Convert from percent to decimal
+        if (!poolData) continue;
 
-          // Get previous rate for comparison
-          const { data: prevRate } = await supabase
-            .from('pendle_rates_history')
-            .select('implied_apy, underlying_apy')
-            .eq('pool_id', poolId)
-            .order('recorded_at', { ascending: false })
-            .limit(1)
-            .single();
+        const poolId = poolData.id;
 
-          // Only insert rate if it changed significantly (>0.1% difference) to avoid noise
-          const prevImplied = prevRate ? Number(prevRate.implied_apy) : 0;
-          const apyDifference = Math.abs(impliedApy - prevImplied);
+        // Получаем предыдущую ставку для сравнения
+        const { data: prevRate } = await supabase
+          .from('pendle_rates_history').select('implied_apy')
+          .eq('pool_id', poolId).order('recorded_at', { ascending: false })
+          .limit(1).single();
 
-          if (!prevRate || apyDifference > 0.001) {
-            // Use underlyingApy from scraping if available, otherwise estimate
-            const underlyingApyValue = pool.underlyingApy !== null
-              ? pool.underlyingApy / 100
-              : (impliedApy * 0.5);
+        const prevImplied = prevRate ? Number(prevRate.implied_apy) : 0;
+        const apyDiff = Math.abs(impliedApy - prevImplied);
 
-            await supabase
-              .from('pendle_rates_history')
-              .insert({
-                pool_id: poolId,
-                implied_apy: impliedApy,
-                underlying_apy: underlyingApyValue,
-                liquidity: pool.liquidity,
-                volume_24h: 0,
+        // Записываем ставку только если есть изменения
+        if (!prevRate || apyDiff > 0.001) {
+          await supabase.from('pendle_rates_history').insert({
+            pool_id: poolId,
+            implied_apy: impliedApy,
+            underlying_apy: impliedApy * 0.9, // Примерная оценка
+            liquidity: liquidity,
+            volume_24h: 0,
+          });
+        }
+
+        // Алерт о новом рынке — пул появился впервые
+        if (!prevRate) {
+          alerts.push({
+            pool_id: poolId, alert_type: 'new_market',
+            previous_value: 0, current_value: impliedApy,
+            change_percent: 0,
+          });
+        }
+
+        // Проверка изменений implied APY
+        if (prevRate && apyDiff > 0.001 && prevImplied > 0) {
+          const change = (impliedApy - prevImplied) / prevImplied;
+          if (Math.abs(change) >= IMPLIED_APY_THRESHOLD) {
+            const cooldownTime = new Date(Date.now() - ALERT_COOLDOWN_HOURS * 3600000).toISOString();
+            const { data: existing } = await supabase
+              .from('pendle_alerts').select('id')
+              .eq('pool_id', poolId).eq('alert_type', 'implied_spike')
+              .gte('created_at', cooldownTime).limit(1);
+
+            if (!existing || existing.length === 0) {
+              alerts.push({
+                pool_id: poolId, alert_type: 'implied_spike',
+                previous_value: prevImplied, current_value: impliedApy,
+                change_percent: change * 100,
               });
-
-            console.log(`Inserted rate for ${pool.name}: ${(impliedApy * 100).toFixed(2)}%`);
-          }
-
-          // Check for alerts - only if rate changed significantly
-          if (prevRate && apyDifference > 0.001) {
-            // Check implied APY spike (1% threshold)
-            if (prevImplied > 0) {
-              const impliedChange = (impliedApy - prevImplied) / prevImplied;
-
-              if (Math.abs(impliedChange) >= IMPLIED_APY_THRESHOLD) {
-                // CHECK FOR DUPLICATE ALERTS - prevent alert spam
-                const cooldownTime = new Date(Date.now() - ALERT_COOLDOWN_HOURS * 60 * 60 * 1000).toISOString();
-
-                const { data: existingAlerts } = await supabase
-                  .from('pendle_alerts')
-                  .select('id')
-                  .eq('pool_id', poolId)
-                  .eq('alert_type', 'implied_spike')
-                  .gte('created_at', cooldownTime)
-                  .limit(1);
-
-                // Only create alert if no recent alert exists for this pool
-                if (!existingAlerts || existingAlerts.length === 0) {
-                  alerts.push({
-                    pool_id: poolId,
-                    alert_type: 'implied_spike',
-                    previous_value: prevImplied,
-                    current_value: impliedApy,
-                    change_percent: impliedChange * 100,
-                    pool_name: pool.name,
-                    chain_name: pool.chainName,
-                  });
-                } else {
-                  console.log(`Skipping duplicate alert for ${pool.name} - alert exists within ${ALERT_COOLDOWN_HOURS}h`);
-                }
-              }
             }
           }
-
-          inserted++;
         }
-      } catch (error) {
-        console.error(`Error processing Spectra pool ${pool.name}:`, error);
+
+        inserted++;
+        console.log(`[Spectra] ${tokenName} (${chainName}): implied=${(impliedApy * 100).toFixed(2)}%, liq=$${liquidity.toLocaleString()}`);
+      } catch (err) {
+        console.error(`Ошибка обработки пула ${pool.address}:`, err);
       }
     }
 
-    console.log(`Generated ${alerts.length} new alerts for Spectra pools`);
+    // Очистка фантомных пулов: удаляем Spectra-записи, которых нет в актуальных данных
+    if (activeMarketAddresses.length > 0) {
+      const { data: existingSpectraPools } = await supabase
+        .from('pendle_pools')
+        .select('id, market_address, name')
+        .like('market_address', 'spectra-%');
 
-    // Insert alerts
+      if (existingSpectraPools && existingSpectraPools.length > 0) {
+        const stalePools = existingSpectraPools.filter(
+          (p) => !activeMarketAddresses.includes(p.market_address)
+        );
+
+        if (stalePools.length > 0) {
+          console.log(`[Spectra] Удаляем ${stalePools.length} фантомных пулов: ${stalePools.map(p => p.name).join(', ')}`);
+          const staleIds = stalePools.map(p => p.id);
+          // Каскадное удаление: pendle_rates_history и pendle_alerts удалятся автоматически (ON DELETE CASCADE)
+          const { error: deleteError } = await supabase
+            .from('pendle_pools')
+            .delete()
+            .in('id', staleIds);
+
+          if (deleteError) {
+            console.error('[Spectra] Ошибка удаления фантомных пулов:', deleteError);
+          } else {
+            console.log(`[Spectra] Фантомные пулы успешно удалены`);
+          }
+        }
+      }
+    }
+
     for (const alert of alerts) {
-      const { error } = await supabase
-        .from('pendle_alerts')
-        .insert({
-          pool_id: alert.pool_id,
-          alert_type: alert.alert_type,
-          previous_value: alert.previous_value,
-          current_value: alert.current_value,
-          change_percent: alert.change_percent,
-        });
-
-      if (!error) {
-        alertsCreated++;
-      }
+      const { error } = await supabase.from('pendle_alerts').insert(alert);
+      if (!error) alertsCreated++;
     }
 
-    console.log(`Successfully inserted/updated ${inserted} Spectra pools, created ${alertsCreated} alerts`);
+    console.log(`[Spectra] Готово: ${inserted} пулов обновлено, ${alertsCreated} алертов создано`);
 
     return new Response(JSON.stringify({
       success: true,
       pools_scraped: pools.length,
       pools_inserted: inserted,
       alerts_generated: alertsCreated,
-      pools: pools.slice(0, 10),
+      pools: pools.slice(0, 15).map(p => ({
+        name: p.underlying?.symbol || p.name,
+        chain: CHAIN_NAMES[p.chainId] || `Chain-${p.chainId}`,
+        impliedApy: `${(p.impliedApy || 0).toFixed(2)}%`,
+        liquidity: `$${(p.tvl?.usd || 0).toLocaleString()}`,
+        maturity: p.maturity ? new Date(p.maturity * 1000).toISOString() : null,
+      })),
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
-    console.error('Error in fetch-spectra-markets:', error);
-    return new Response(JSON.stringify({ error: 'An error occurred processing your request' }), {
+    console.error('[Spectra] Критическая ошибка:', error);
+    return new Response(JSON.stringify({ error: String(error) }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

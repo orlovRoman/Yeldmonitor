@@ -71,11 +71,35 @@ Deno.serve(async (req) => {
 
                 if (response.ok && data.data?.markdown) {
                     const markdown = data.data.markdown;
-                    const impliedMatch = markdown.match(/Implied\s*Yield[\s:]*(\d+\.?\d*)%/i);
-                    const realMatch = markdown.match(/Real\s*Yield[\s:]*(\d+\.?\d*)%/i);
+                    console.log(`[Scrape] ${symbol} markdown preview:`, markdown.substring(0, 500));
 
-                    const impliedYield = impliedMatch ? parseFloat(impliedMatch[1]) / 100 : null;
-                    const realYield = realMatch ? parseFloat(realMatch[1]) / 100 : null;
+                    // Try multiple patterns for Implied Yield
+                    let impliedYield: number | null = null;
+                    let realYield: number | null = null;
+
+                    // Pattern 1: "Implied Yield 18.886%"
+                    const impliedMatch1 = markdown.match(/Implied\s*Yield[\s:]*([\d.]+)%/i);
+                    // Pattern 2: "Implied Yield: 18.886%"  
+                    const impliedMatch2 = markdown.match(/Implied\s*Yield\s*[:\s]*([\d.]+)%/i);
+                    // Pattern 3: Just look for percentage after "Implied"
+                    const impliedMatch3 = markdown.match(/Implied[^\d]*([\d.]+)%/i);
+
+                    if (impliedMatch1) {
+                        impliedYield = parseFloat(impliedMatch1[1]) / 100;
+                        console.log(`[Scrape] ${symbol} matched pattern 1: ${impliedMatch1[1]}%`);
+                    } else if (impliedMatch2) {
+                        impliedYield = parseFloat(impliedMatch2[1]) / 100;
+                        console.log(`[Scrape] ${symbol} matched pattern 2: ${impliedMatch2[1]}%`);
+                    } else if (impliedMatch3) {
+                        impliedYield = parseFloat(impliedMatch3[1]) / 100;
+                        console.log(`[Scrape] ${symbol} matched pattern 3: ${impliedMatch3[1]}%`);
+                    }
+
+                    // Real Yield patterns
+                    const realMatch = markdown.match(/Real\s*Yield[\s:]*([\d.]+)%/i);
+                    if (realMatch) {
+                        realYield = parseFloat(realMatch[1]) / 100;
+                    }
 
                     if (impliedYield !== null) {
                         results.push({
@@ -84,6 +108,9 @@ Deno.serve(async (req) => {
                             realYield: realYield || 0,
                             timestamp: new Date().toISOString(),
                         });
+                        console.log(`[Scrape] ${symbol} result: implied=${impliedYield}, real=${realYield}`);
+                    } else {
+                        console.log(`[Scrape] ${symbol} no match found`);
                     }
                 }
             } catch (e) {

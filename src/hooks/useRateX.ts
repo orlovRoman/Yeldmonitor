@@ -46,7 +46,7 @@ export interface RateXMarket {
     due_date: string;
     due_date_l?: string;
     due_date_flag: boolean;
-    sum_price: number;
+    sum_price: number;       // Current YT token price (used to compute implied yield)
     trade_commission: string;
     pt_mint: string;
     partners: string[]; // Changed from string to string[]

@@ -358,7 +358,19 @@ Deno.serve(async (req) => {
               volume_24h: 0,
             });
 
-          // Check for alerts
+          // Алерт о новом рынке — пул появился впервые
+          if (!prevRate) {
+            alerts.push({
+              pool_id: poolId,
+              alert_type: 'new_market',
+              previous_value: 0,
+              current_value: impliedApy,
+              change_percent: 0,
+              pool_name: pool.name,
+            });
+          }
+
+          // Проверка изменений APY
           if (prevRate) {
             const prevImplied = Number(prevRate.implied_apy) || 0;
 
