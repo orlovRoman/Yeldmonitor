@@ -45,7 +45,6 @@ export function NewPoolsPanel() {
 
   // Only show non-RateX pools that appeared within the selected window
   const newPools = (pools || []).filter(pool => {
-    if (isRateXPool(pool)) return false; // RateX = уже существующие рынки
     return new Date(pool.created_at) >= cutoff;
   });
 

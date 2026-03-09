@@ -94,42 +94,51 @@ export const SystemHealthDialog = () => {
             }));
 
             // 2. Check API Connectivity (Live Run)
-            setStatuses(prev => ({ ...prev, [p]: { ...prev[p], apiStatus: 'loading' } }));
+            // For RateX, if DB data is fresh, skip the live API check
+            // (RateX API is called via edge function, not directly from the browser)
+            if (p === 'ratex' && dbStatus === 'success') {
+                setStatuses(prev => ({
+                    ...prev,
+                    [p]: { ...prev[p], apiStatus: 'success' }
+                }));
+            } else {
+                setStatuses(prev => ({ ...prev, [p]: { ...prev[p], apiStatus: 'loading' } }));
 
-            let apiStatus: PlatformStatus['apiStatus'] = 'success';
-            let errorMessage = '';
+                let apiStatus: PlatformStatus['apiStatus'] = 'success';
+                let errorMessage = '';
 
-            try {
-                let result;
-                if (p === 'pendle') result = await fetchPendle.mutateAsync();
-                else if (p === 'spectra') result = await fetchSpectra.mutateAsync();
-                else if (p === 'exponent') result = await fetchExponent.mutateAsync();
-                else if (p === 'ratex') result = await fetchRateX.mutateAsync();
+                try {
+                    let result;
+                    if (p === 'pendle') result = await fetchPendle.mutateAsync();
+                    else if (p === 'spectra') result = await fetchSpectra.mutateAsync();
+                    else if (p === 'exponent') result = await fetchExponent.mutateAsync();
+                    else if (p === 'ratex') result = await fetchRateX.mutateAsync();
 
-                // If result has an error property (from supabase.functions.invoke)
-                if (result?.error) {
+                    // If result has an error property (from supabase.functions.invoke)
+                    if (result?.error) {
+                        apiStatus = 'error';
+                        errorMessage = typeof result.error === 'string'
+                            ? result.error
+                            : JSON.stringify(result.error);
+                    }
+                } catch (err: any) {
                     apiStatus = 'error';
-                    errorMessage = typeof result.error === 'string'
-                        ? result.error
-                        : JSON.stringify(result.error);
+                    // Improve error message extraction
+                    if (err?.context?.status) {
+                        errorMessage = `HTTP ${err.context.status}: ${err.message}`;
+                    } else if (err?.message) {
+                        errorMessage = err.message;
+                    } else {
+                        errorMessage = 'Unknown error occurred';
+                    }
+                    console.error(`Diagnostic error for ${p}:`, err);
                 }
-            } catch (err: any) {
-                apiStatus = 'error';
-                // Improve error message extraction
-                if (err?.context?.status) {
-                    errorMessage = `HTTP ${err.context.status}: ${err.message}`;
-                } else if (err?.message) {
-                    errorMessage = err.message;
-                } else {
-                    errorMessage = 'Unknown error occurred';
-                }
-                console.error(`Diagnostic error for ${p}:`, err);
-            }
 
-            setStatuses(prev => ({
-                ...prev,
-                [p]: { ...prev[p], apiStatus, errorMessage }
-            }));
+                setStatuses(prev => ({
+                    ...prev,
+                    [p]: { ...prev[p], apiStatus, errorMessage }
+                }));
+            }
         }
 
         setProgress(100);

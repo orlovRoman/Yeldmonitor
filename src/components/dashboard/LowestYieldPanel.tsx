@@ -43,7 +43,7 @@ export function LowestYieldPanel() {
 
     // Sort by implied_apy ascending (lowest first) and take top 10
     const lowestYieldPools = (pools || [])
-        .filter(pool => pool.latest_rate && pool.latest_rate.implied_apy > 0)
+        .filter(pool => pool.latest_rate && pool.latest_rate.implied_apy > 0.0001)
         .sort((a, b) => {
             const apyA = a.latest_rate?.implied_apy || 0;
             const apyB = b.latest_rate?.implied_apy || 0;
@@ -76,7 +76,7 @@ export function LowestYieldPanel() {
                     </Badge>
                 </div>
             </div>
-            <ScrollArea className="h-[280px]">
+            <ScrollArea className="h-[560px]">
                 {lowestYieldPools.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-48 text-center px-4">
                         <TrendingDown className="h-8 w-8 text-muted-foreground mb-2" />
@@ -95,12 +95,12 @@ export function LowestYieldPanel() {
                                             <Badge
                                                 variant="outline"
                                                 className={`text-[10px] px-1 py-0 h-5 ${isRateXPool(pool)
-                                                        ? 'border-blue-500 text-blue-500'
-                                                        : isExponentPool(pool)
-                                                            ? 'border-orange-500 text-orange-500'
-                                                            : isSpectraPool(pool)
-                                                                ? 'border-purple-500 text-purple-500'
-                                                                : 'border-primary text-primary'
+                                                    ? 'border-blue-500 text-blue-500'
+                                                    : isExponentPool(pool)
+                                                        ? 'border-orange-500 text-orange-500'
+                                                        : isSpectraPool(pool)
+                                                            ? 'border-purple-500 text-purple-500'
+                                                            : 'border-primary text-primary'
                                                     }`}
                                             >
                                                 {getPlatformName(pool)}

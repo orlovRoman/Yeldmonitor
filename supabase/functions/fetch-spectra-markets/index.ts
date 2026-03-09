@@ -20,6 +20,7 @@ interface SpectraPool {
   name: string;
   chainId: number;
   tvl: { ibt: number; underlying: number; usd: number };
+  liquidity: { ibt: number; underlying: number; usd: number };
   ptApy: number;
   impliedApy: number;
   lpApy: any;
@@ -78,6 +79,12 @@ async function fetchSpectraPoolsFromNextData(): Promise<SpectraPool[]> {
           for (const pool of item.pools) {
             pool._parentUnderlying = parentUnderlying;
             pool._parentIbt = parentIbt;
+            if (!pool.tvl && item.tvl) {
+              pool.tvl = item.tvl;
+            }
+            if (!pool.liquidity && item.liquidity) {
+              pool.liquidity = item.liquidity;
+            }
           }
           allPools.push(...item.pools);
         } else if (item.address && (item.impliedApy !== undefined || item.ptApy !== undefined)) {
@@ -101,6 +108,32 @@ function verifyAccess(req: Request): boolean {
   return req.headers.has('x-client-info') || req.headers.has('apikey');
 }
 
+/** Удаляет из БД Spectra-пулы, которых нет в activeMarketAddresses. */
+async function cleanupStalePools(supabase: ReturnType<typeof import('https://esm.sh/@supabase/supabase-js@2').createClient>, activeMarketAddresses: string[]): Promise<number> {
+  const { data: existingSpectraPools } = await supabase
+    .from('pendle_pools')
+    .select('id, market_address, name')
+    .like('market_address', 'spectra-%');
+
+  if (!existingSpectraPools || existingSpectraPools.length === 0) return 0;
+
+  const stalePools = activeMarketAddresses.length > 0
+    ? existingSpectraPools.filter(p => !activeMarketAddresses.includes(p.market_address))
+    : existingSpectraPools; // если пулов вообще не нашли — удалять нечего, безопаснее оставить
+
+  if (stalePools.length === 0) return 0;
+
+  console.log(`[Spectra] Удаляем ${stalePools.length} фантомных пулов: ${stalePools.map(p => p.name).join(', ')}`);
+  const staleIds = stalePools.map(p => p.id);
+  const { error: deleteError } = await supabase.from('pendle_pools').delete().in('id', staleIds);
+  if (deleteError) {
+    console.error('[Spectra] Ошибка удаления фантомных пулов:', deleteError);
+    return 0;
+  }
+  console.log(`[Spectra] Фантомные пулы успешно удалены`);
+  return stalePools.length;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
@@ -116,12 +149,25 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Режим ручной очистки: POST { action: 'cleanup' }
+    let body: Record<string, unknown> = {};
+    try { body = await req.json(); } catch { /* no body is fine */ }
+    if (body?.action === 'cleanup') {
+      const removed = await cleanupStalePools(supabase, []);
+      return new Response(JSON.stringify({ success: true, message: `Удалено ${removed} фантомных Spectra-пулов` }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Загружаем пулы напрямую из Next.js SSR данных (без Firecrawl)
     const pools = await fetchSpectraPoolsFromNextData();
 
     if (pools.length === 0) {
+      console.warn('[Spectra] Пулы не найдены в __NEXT_DATA__ — страница, вероятно, рендерится на клиенте.');
+      // НЕ выходим сразу — cleanup всё равно может найти фантомы если нет активных пулов;
+      // но удалять ВСЕ записи когда источник вернул 0 опасно, просто сообщаем.
       return new Response(JSON.stringify({
-        success: false, error: 'Не удалось распарсить пулы из __NEXT_DATA__',
+        success: false, pools_scraped: 0, error: 'Не удалось распарсить пулы из __NEXT_DATA__. Попробуйте позже.',
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -147,7 +193,7 @@ Deno.serve(async (req) => {
 
         // impliedApy из Spectra приходит в процентах (напр. 9.61 = 9.61%)
         const impliedApy = (pool.impliedApy || pool.ptApy || 0) / 100;
-        const liquidity = pool.tvl?.usd || 0;
+        const liquidity = pool.liquidity?.usd || pool.tvl?.usd || 0;
 
         // Дата экспирации из unix timestamp (секунды)
         let expiryDate: string | null = null;
@@ -155,8 +201,10 @@ Deno.serve(async (req) => {
           expiryDate = new Date(pool.maturity * 1000).toISOString();
         }
 
-        // Название токена: сначала из родительского underlying, потом ibt, потом парсим из name
-        let tokenName = pool._parentUnderlying || pool._parentIbt || '';
+        // Название токена: сначала из IBT (как показывает Spectra UI), потом underlying, потом парсим из name
+        let tokenName = pool._parentIbt || pool._parentUnderlying || '';
+        // Убираем внутренний префикс Spectra (напр. "sw-sFLR" → "sFLR")
+        tokenName = tokenName.replace(/^sw-/, '');
         if (!tokenName && pool.name) {
           // Формат: "Principal Token: sw-WUSDN(USDN) 2027/01/12" → извлекаем USDN
           const parenMatch = pool.name.match(/\(([^)]+)\)/);
@@ -187,7 +235,7 @@ Deno.serve(async (req) => {
 
         // Получаем предыдущую ставку для сравнения
         const { data: prevRate } = await supabase
-          .from('pendle_rates_history').select('implied_apy')
+          .from('pendle_rates_history').select('id, implied_apy, liquidity')
           .eq('pool_id', poolId).order('recorded_at', { ascending: false })
           .limit(1).single();
 
@@ -203,6 +251,11 @@ Deno.serve(async (req) => {
             liquidity: liquidity,
             volume_24h: 0,
           });
+        } else if (prevRate && Math.abs((Number(prevRate.liquidity) || 0) - liquidity) > 1) {
+          // APY не изменился, но ликвидность обновилась — обновляем существующую запись
+          await supabase.from('pendle_rates_history')
+            .update({ liquidity: liquidity })
+            .eq('id', prevRate.id);
         }
 
         // Алерт о новом рынке — пул появился впервые
@@ -242,34 +295,7 @@ Deno.serve(async (req) => {
     }
 
     // Очистка фантомных пулов: удаляем Spectra-записи, которых нет в актуальных данных
-    if (activeMarketAddresses.length > 0) {
-      const { data: existingSpectraPools } = await supabase
-        .from('pendle_pools')
-        .select('id, market_address, name')
-        .like('market_address', 'spectra-%');
-
-      if (existingSpectraPools && existingSpectraPools.length > 0) {
-        const stalePools = existingSpectraPools.filter(
-          (p) => !activeMarketAddresses.includes(p.market_address)
-        );
-
-        if (stalePools.length > 0) {
-          console.log(`[Spectra] Удаляем ${stalePools.length} фантомных пулов: ${stalePools.map(p => p.name).join(', ')}`);
-          const staleIds = stalePools.map(p => p.id);
-          // Каскадное удаление: pendle_rates_history и pendle_alerts удалятся автоматически (ON DELETE CASCADE)
-          const { error: deleteError } = await supabase
-            .from('pendle_pools')
-            .delete()
-            .in('id', staleIds);
-
-          if (deleteError) {
-            console.error('[Spectra] Ошибка удаления фантомных пулов:', deleteError);
-          } else {
-            console.log(`[Spectra] Фантомные пулы успешно удалены`);
-          }
-        }
-      }
-    }
+    const cleaned = await cleanupStalePools(supabase, activeMarketAddresses);
 
     for (const alert of alerts) {
       const { error } = await supabase.from('pendle_alerts').insert(alert);
@@ -282,6 +308,7 @@ Deno.serve(async (req) => {
       success: true,
       pools_scraped: pools.length,
       pools_inserted: inserted,
+      pools_cleaned: cleaned,
       alerts_generated: alertsCreated,
       pools: pools.slice(0, 15).map(p => ({
         name: p.underlying?.symbol || p.name,

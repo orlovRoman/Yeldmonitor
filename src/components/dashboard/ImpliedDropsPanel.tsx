@@ -128,7 +128,7 @@ export function ImpliedDropsPanel() {
           </Select>
         </div>
       </div>
-      <ScrollArea className="h-[400px]">
+      <ScrollArea className="h-[560px]">
         {impliedDrops.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-center px-4">
             <TrendingDown className="h-12 w-12 text-muted-foreground mb-4" />
