@@ -73,43 +73,73 @@ Deno.serve(async (req) => {
       headers: { "Accept": "application/json" }
     });
     
-    // Fetch tokens metadata
-    const tokensRes = await fetch('https://api.exponent.finance/api/tokens', {
-      headers: { "Accept": "application/json" }
-    });
-
-    if (!vaultsRes.ok || !tokensRes.ok) {
-        throw new Error(`Failed to fetch exponent APIs: Vaults: ${vaultsRes.status}, Tokens: ${tokensRes.status}`);
+    if (!vaultsRes.ok) {
+        throw new Error(`Failed to fetch exponent vaults: ${vaultsRes.status}`);
     }
 
     const vaults = await vaultsRes.json();
-    const tokensList = await tokensRes.json();
     
-    // Convert array to dictionary for faster lookup
-    const tokensDict: Record<string, any> = {};
-    if (Array.isArray(tokensList)) {
-      for (const token of tokensList) {
-        if (token.mint) {
-          tokensDict[token.mint] = token;
+    // Fetch tokens metadata from multiple sources for robustness
+    let tokensDict: Record<string, any> = {
+      // Hardcoded fallback for common Exponent tokens
+      'tzqPfHkNpMDxvijpyZihXpjpQ9dzmgDVzgnUcfi3Ubv': { name: 'Maple Syrup USDC', ticker: 'MS-USDC' },
+      'Fy7SiHCwMzNMXYgygQhpYvjSg23G8B9TfZm3mHNgy6Bu': { name: 'Bulk Staked SOL', ticker: 'BULKSOL' },
+      'BULKoNSGzxtCqzwTvg5hFJg8fx6dqZRScyXe5LYMfxrn': { name: 'BULK Staked SOL', ticker: 'BulkSOL' },
+      '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG': { name: 'Solstice USX', ticker: 'USX' },
+      'AbLVgZ12tDRf7PSYFKRjtHM1yvqXwhLk9sSiL8ocRqt3': { name: 'Hylo xSOL SY', ticker: 'xSOL' },
+      'GhMVkhVquqvMyGixDKsWiXKGV771H34KWDfXTwigGBko': { name: 'Jupiter Lend USDG', ticker: 'JL-USDG' },
+      'BehZJhD9RYuXZTUcfXD5vUP4BtJmjTVdZyLifHkcsp9H': { name: 'Ethena USDe', ticker: 'USDe' },
+      'HT5Fr38iHyLHjuFFCBwQWHMiCBrL9rf5LzAUSxyLCpD2': { name: 'Ethena sUSDe', ticker: 'sUSDe' },
+    };
+
+    const apiSources = [
+      'https://api.exponent.finance/api/tokens',
+      'https://api-n408.onrender.com/api/tokens'
+    ];
+
+    for (const url of apiSources) {
+      try {
+        const res = await fetch(url, { headers: { "Accept": "application/json" } });
+        if (res.ok) {
+          const list = await res.json();
+          if (Array.isArray(list)) {
+            for (const t of list) {
+              if (t.mint) {
+                // Merge, preferring official API properties if already present? 
+                // Actually if it's already in Dict, keep it unless new one has more info
+                const mint = t.mint.trim();
+                tokensDict[mint] = {
+                   ...tokensDict[mint],
+                   ...t
+                };
+              }
+            }
+          }
         }
+      } catch (e) {
+        console.warn(`Failed to fetch tokens from ${url}:`, e);
       }
     }
     
-    console.log(`Fetched ${vaults.length} vaults and ${Object.keys(tokensDict).length} tokens metadata.`);
+    console.log(`Fetched ${vaults.length} vaults and built token dictionary with ${Object.keys(tokensDict).length} entries.`);
 
     for (const vault of vaults) {
       try {
         // Vault has pt_mint and sy_token which can be matched against tokensDict
-        const syTokenMint = vault.sy_token || vault.underlying_mint;
-        const ptMint = vault.pt_mint;
+        const syTokenMint = (vault.sy_token || vault.underlying_mint || '').trim();
+        const ptMint = (vault.pt_mint || '').trim();
         
         // Find token names from the dictionary
         const syTokenMeta = tokensDict[syTokenMint];
         const ptTokenMeta = tokensDict[ptMint];
         
         // Fallback names if not found in dict
-        let tokenName = syTokenMeta?.name || syTokenMeta?.ticker || ptTokenMeta?.name || ptTokenMeta?.ticker || "Unknown";
-        let ticker = syTokenMeta?.ticker || ptTokenMeta?.ticker || "Token";
+        let tokenName = syTokenMeta?.name || syTokenMeta?.ticker || syTokenMeta?.symbol ||
+                        ptTokenMeta?.name || ptTokenMeta?.ticker || ptTokenMeta?.symbol || "Unknown";
+        
+        let ticker = syTokenMeta?.ticker || syTokenMeta?.symbol || 
+                     ptTokenMeta?.ticker || ptTokenMeta?.symbol || "Token";
+        
         let displayName = `${tokenName} (${ticker})`;
         
         if (tokenName === "Unknown" && vault.address) {
