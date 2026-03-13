@@ -81,20 +81,25 @@ Deno.serve(async (req) => {
     
     // Fetch tokens metadata from multiple sources for robustness
     let tokensDict: Record<string, any> = {
-      // Hardcoded fallback for common Exponent tokens
-      'tzqPfHkNpMDxvijpyZihXpjpQ9dzmgDVzgnUcfi3Ubv': { name: 'Maple Syrup USDC', ticker: 'MS-USDC' },
-      'Fy7SiHCwMzNMXYgygQhpYvjSg23G8B9TfZm3mHNgy6Bu': { name: 'Bulk Staked SOL', ticker: 'BULKSOL' },
-      'BULKoNSGzxtCqzwTvg5hFJg8fx6dqZRScyXe5LYMfxrn': { name: 'BULK Staked SOL', ticker: 'BulkSOL' },
-      '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG': { name: 'Solstice USX', ticker: 'USX' },
-      'AbLVgZ12tDRf7PSYFKRjtHM1yvqXwhLk9sSiL8ocRqt3': { name: 'Hylo xSOL SY', ticker: 'xSOL' },
-      'GhMVkhVquqvMyGixDKsWiXKGV771H34KWDfXTwigGBko': { name: 'Jupiter Lend USDG', ticker: 'JL-USDG' },
-      'BehZJhD9RYuXZTUcfXD5vUP4BtJmjTVdZyLifHkcsp9H': { name: 'Ethena USDe', ticker: 'USDe' },
-      'HT5Fr38iHyLHjuFFCBwQWHMiCBrL9rf5LzAUSxyLCpD2': { name: 'Ethena sUSDe', ticker: 'sUSDe' },
+      // Hardcoded fallback for common Exponent tokens found in logs
+      'tzqPfHkNpMDxvijpyZihXpjpQ9dzmgDVzgnUcfi3Ubv': { name: 'Maple Syrup USDC', ticker: 'MS-USDC', decimals: 6 },
+      'Fy7SiHCwMzNMXYgygQhpYvjSg23G8B9TfZm3mHNgy6Bu': { name: 'Bulk Staked SOL', ticker: 'BULKSOL', decimals: 9 },
+      'BULKoNSGzxtCqzwTvg5hFJg8fx6dqZRScyXe5LYMfxrn': { name: 'BULK Staked SOL', ticker: 'BulkSOL', decimals: 9 },
+      '6FrrzDk5mQARGc1TDYoyVnSyRdds1t4PbtohCD6p3tgG': { name: 'Solstice USX', ticker: 'USX', decimals: 6 },
+      'AbLVgZ12tDRf7PSYFKRjtHM1yvqXwhLk9sSiL8ocRqt3': { name: 'Hylo xSOL SY', ticker: 'xSOL', decimals: 9 },
+      'GhMVkhVquqvMyGixDKsWiXKGV771H34KWDfXTwigGBko': { name: 'Jupiter Lend USDG', ticker: 'JL-USDG', decimals: 6 },
+      'BehZJhD9RYuXZTUcfXD5vUP4BtJmjTVdZyLifHkcsp9H': { name: 'Ethena USDe', ticker: 'USDe', decimals: 9 },
+      'HT5Fr38iHyLHjuFFCBwQWHMiCBrL9rf5LzAUSxyLCpD2': { name: 'Ethena sUSDe', ticker: 'sUSDe', decimals: 9 },
+      'G1qbuP11CdquJCzuDjruWqatQAHroajmxhLfeQVgHosF': { name: 'Onchain Yield Token', ticker: 'ONYC', decimals: 9 },
+      '2RJe5tq2TRaNab8kiE8eAP1f5AGPeZ8mDWWExzzmJ1Bp': { name: 'Reflect USDC+', ticker: 'fUSDC+', decimals: 6 },
+      'H6c8XJaBHoa84FhFqpTG9RaPbXsWhzQZKQeDnaTWME8H': { name: 'Fragmetric Restaked BTC', ticker: 'fragBTC', decimals: 8 },
+      '34JjsusYp6kdr2wKKaJrEpYoRLqJfiSwfiU7hsJHjU8M': { name: 'Maple Yield SOL', ticker: 'ySOL', decimals: 9 },
     };
 
     const apiSources = [
       'https://api.exponent.finance/api/tokens',
-      'https://api-n408.onrender.com/api/tokens'
+      'https://api-n408.onrender.com/api/tokens',
+      'https://api.exponent.fi/api/tokens'
     ];
 
     for (const url of apiSources) {
@@ -105,8 +110,6 @@ Deno.serve(async (req) => {
           if (Array.isArray(list)) {
             for (const t of list) {
               if (t.mint) {
-                // Merge, preferring official API properties if already present? 
-                // Actually if it's already in Dict, keep it unless new one has more info
                 const mint = t.mint.trim();
                 tokensDict[mint] = {
                    ...tokensDict[mint],
@@ -140,6 +143,13 @@ Deno.serve(async (req) => {
         let ticker = syTokenMeta?.ticker || syTokenMeta?.symbol || 
                      ptTokenMeta?.ticker || ptTokenMeta?.symbol || "Token";
         
+        // If still unknown, check if vault address itself is a key
+        if (tokenName === "Unknown" && tokensDict[vault.address]) {
+           const vMeta = tokensDict[vault.address];
+           tokenName = vMeta.name || vMeta.ticker || "Unknown";
+           ticker = vMeta.ticker || "Token";
+        }
+
         let displayName = `${tokenName} (${ticker})`;
         
         if (tokenName === "Unknown" && vault.address) {
@@ -200,12 +210,20 @@ Deno.serve(async (req) => {
           
           const underlyingApyEstimate = impliedApy * 0.7; // Exponent API doesn't always provide clear underlying APY
           
-          // Try to get liquidity TVL
-          let liquidity = vault.legacy_tvl_in_base_token || 0;
-          if (liquidity === 0 && vault.pt_supply && syTokenMeta?.priceUsd) {
+          // Liquidity calculation with decimal scaling
+          let liquidity = 0;
+          const rawLiquidity = vault.legacy_tvl_in_base_token || 0;
+          const decimals = syTokenMeta?.decimals || ptTokenMeta?.decimals || 9; // Default 9 decimals for Solana tokens
+          
+          if (rawLiquidity > 0) {
+            liquidity = rawLiquidity / Math.pow(10, decimals);
+          } else if (vault.pt_supply && syTokenMeta?.priceUsd) {
              liquidity = vault.pt_supply * syTokenMeta.priceUsd;
-          } else if (liquidity === 0) {
-             liquidity = 0; // Default if unparseable
+          }
+          
+          // Sanity check - if liquidity is impossibly high (e.g. > 100 Billion), probably wrong decimals
+          if (liquidity > 100000000000) {
+              liquidity = liquidity / 1000; // Emergency scale down
           }
 
           // Get previous rate for comparison
