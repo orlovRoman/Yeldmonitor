@@ -3,6 +3,7 @@ import { usePendlePools } from '@/hooks/usePendle';
 import { CHAIN_NAMES, getPlatformName, getMarketUrl, isSpectraPool, isExponentPool, isRateXPool } from '@/types/pendle';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import type { PlatformFilterValue } from './PlatformFilter';
 
 const getDisplayName = (pool: { underlying_asset?: string | null; name?: string } | null | undefined) => {
     if (!pool) return 'Unknown';
@@ -26,7 +27,7 @@ const getSafeHostname = (urlString: string): string => {
     }
 };
 
-export function LowestYieldPanel() {
+export function LowestYieldPanel({ platformFilter = 'all' }: { platformFilter?: PlatformFilterValue }) {
     const { data: pools, isLoading } = usePendlePools();
 
     const formatPercent = (value: number | null | undefined) => {
@@ -43,7 +44,11 @@ export function LowestYieldPanel() {
 
     // Sort by implied_apy ascending (lowest first) and take top 10
     const lowestYieldPools = (pools || [])
-        .filter(pool => pool.latest_rate && pool.latest_rate.implied_apy > 0.0001)
+        .filter(pool => {
+            if (!pool.latest_rate || pool.latest_rate.implied_apy <= 0.0001) return false;
+            if (platformFilter !== 'all' && getPlatformName(pool) !== platformFilter) return false;
+            return true;
+        })
         .sort((a, b) => {
             const apyA = a.latest_rate?.implied_apy || 0;
             const apyB = b.latest_rate?.implied_apy || 0;

@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+import type { PlatformFilterValue } from './PlatformFilter';
 
 const formatExpiry = (expiry: string | null) => {
   if (!expiry) return '';
@@ -47,7 +48,7 @@ const getSafeHostname = (urlString: string): string => {
   }
 };
 
-export function AlertsPanel() {
+export function AlertsPanel({ platformFilter = 'all' }: { platformFilter?: PlatformFilterValue }) {
   const { data: alerts, isLoading } = usePendleAlerts();
   const analyzeAlert = useAnalyzeAlert();
   const dismissAlert = useDismissAlert();
@@ -72,9 +73,10 @@ export function AlertsPanel() {
     try {
       await analyzeAlert.mutateAsync(alertId);
       toast.success('Анализ завершён');
-    } catch (error) {
-      toast.error('Ошибка анализа');
-      console.error(error);
+    } catch (error: any) {
+      const message = error?.message || error?.context?.body?.error || 'Неизвестная ошибка';
+      toast.error(`Ошибка анализа: ${message}`);
+      console.error('Analyze error:', error);
     }
   };
 
@@ -100,7 +102,9 @@ export function AlertsPanel() {
     }
   };
 
-  const activeAlerts = alerts || [];
+  const activeAlerts = (alerts || []).filter(a =>
+    platformFilter === 'all' || getPlatformName(a.pendle_pools) === platformFilter
+  );
 
   if (isLoading) {
     return (

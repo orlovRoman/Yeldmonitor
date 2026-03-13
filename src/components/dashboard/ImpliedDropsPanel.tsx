@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import type { PlatformFilterValue } from './PlatformFilter';
 
 const getDisplayName = (pool: { underlying_asset?: string | null; name?: string } | null | undefined) => {
   if (!pool) return 'Unknown';
@@ -24,7 +25,7 @@ interface UnderlyingApyData {
   [poolId: string]: number | null;
 }
 
-export function ImpliedDropsPanel() {
+export function ImpliedDropsPanel({ platformFilter = 'all' }: { platformFilter?: PlatformFilterValue }) {
   const { data: alerts, isLoading } = usePendleAlerts();
   const [sortBy, setSortBy] = useState<SortBy>('change');
   const [underlyingApyMap, setUnderlyingApyMap] = useState<UnderlyingApyData>({});
@@ -48,7 +49,9 @@ export function ImpliedDropsPanel() {
       if (a.alert_type !== 'implied_spike') return false;
       if (Number(a.change_percent) >= 0) return false;
       if (new Date(a.created_at) < oneHourAgo) return false;
-      return a.status !== 'dismissed';
+      if (a.status === 'dismissed') return false;
+      if (platformFilter !== 'all' && getPlatformName(a.pendle_pools) !== platformFilter) return false;
+      return true;
     })
     .sort((a, b) => {
       switch (sortBy) {

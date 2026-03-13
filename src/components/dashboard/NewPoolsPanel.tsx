@@ -36,7 +36,9 @@ const PLATFORM_COLORS: Record<string, string> = {
   RateX: 'border-blue-500 text-blue-500',
 };
 
-export function NewPoolsPanel() {
+import type { PlatformFilterValue } from './PlatformFilter';
+
+export function NewPoolsPanel({ platformFilter = 'all' }: { platformFilter?: PlatformFilterValue }) {
   const { data: pools, isLoading } = usePendlePools();
   const [sortBy, setSortBy] = useState<SortBy>('time');
   const [daysFilter, setDaysFilter] = useState<DaysFilter>(30);
@@ -45,7 +47,9 @@ export function NewPoolsPanel() {
 
   // Only show non-RateX pools that appeared within the selected window
   const newPools = (pools || []).filter(pool => {
-    return new Date(pool.created_at) >= cutoff;
+    if (new Date(pool.created_at) < cutoff) return false;
+    if (platformFilter !== 'all' && getPlatformName(pool) !== platformFilter) return false;
+    return true;
   });
 
   const sortedPools = [...newPools].sort((a, b) => {
@@ -147,7 +151,8 @@ export function NewPoolsPanel() {
             {sortedPools.map((pool) => {
               const platform = getPlatformName(pool);
               const url = getMarketUrl(pool);
-              const apy = formatApy(pool.latest_rate?.implied_apy);
+              const impliedApy = formatApy(pool.latest_rate?.implied_apy);
+              const underlyingApy = formatApy(pool.latest_rate?.underlying_apy);
               const colorClass = PLATFORM_COLORS[platform] || 'border-primary text-primary';
 
               return (
@@ -173,8 +178,11 @@ export function NewPoolsPanel() {
                     </div>
                     {/* Stats row */}
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
-                      {apy && (
-                        <span className="text-success font-medium">APY {apy}</span>
+                      {impliedApy && (
+                        <span className="text-success font-medium">Impl: {impliedApy}</span>
+                      )}
+                      {underlyingApy && (
+                        <span className="text-primary font-medium">Undrl: {underlyingApy}</span>
                       )}
                       <span>
                         <span className="opacity-70">Ликв: </span>

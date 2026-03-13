@@ -196,6 +196,23 @@ Deno.serve(async (req) => {
             console.error('Failed to fetch APY stats:', err);
         }
 
+        // 2.6 Fetch underlying APY from queryBaseApy (returns % values, e.g. "6.02" = 6.02%)
+        let baseApyMap: Record<string, number> = {};
+        try {
+            const baseApyResponse = await callRateXApi<Record<string, string>>('queryBaseApy');
+            if (baseApyResponse.data && typeof baseApyResponse.data === 'object') {
+                for (const [symbol, value] of Object.entries(baseApyResponse.data)) {
+                    const parsed = parseFloat(value as string);
+                    if (!isNaN(parsed) && parsed > 0) {
+                        baseApyMap[symbol] = parsed / 100; // Convert % to decimal (6.02% -> 0.0602)
+                    }
+                }
+            }
+            console.log(`Fetched base APY for ${Object.keys(baseApyMap).length} symbols`);
+        } catch (err) {
+            console.error('Failed to fetch base APY:', err);
+        }
+
         // 3. Filter active (non-expired, non-deleted) markets
         const now = new Date();
         const activeMarkets = allMarkets.filter((market) => {
@@ -235,7 +252,6 @@ Deno.serve(async (req) => {
                         console.warn(`[RateX] Failed to compute yield for ${market.symbol}:`, e);
                     }
                 }
-                const scrapedRealYield: number | null = null;
 
                 // Upsert pool into main pendle_pools table for dashboard unification
                 const marketAddress = `ratex-${market.symbol}`;
@@ -265,18 +281,14 @@ Deno.serve(async (req) => {
                 // Find APY from stats API for this symbol
                 const symbolStats = apyStats.filter(s => s.symbol === market.symbol);
                 const tvlStat = symbolStats.find(s => s.tvl && parseFloat(s.tvl) > 0) || symbolStats[0];
-                const apyFromStats = tvlStat && tvlStat.apy ? parseFloat(tvlStat.apy) / 100 : 0;
-                const aprFromStats = tvlStat && tvlStat.apr ? parseFloat(tvlStat.apr) / 100 : 0;
                 const liquidityFromStats = tvlStat && tvlStat.tvl ? parseFloat(tvlStat.tvl) : 0;
 
-                // Use scraped Implied Yield if available, otherwise APY from stats, otherwise fallback to API value
+                // Use scraped Implied Yield if available, otherwise fallback to API range
                 const currentImpliedApy = scrapedImpliedYield !== null
                     ? scrapedImpliedYield
-                    : (apyFromStats || (market.initial_upper_yield_range || 0) / 100);
-                // Use scraped Real Yield if available, otherwise APR from stats, otherwise fallback to API value
-                const currentUnderlyingApy = scrapedRealYield !== null
-                    ? scrapedRealYield
-                    : (aprFromStats || (market.initial_lower_yield_range || 0) / 100);
+                    : (market.initial_upper_yield_range || 0) / 100;
+                // Use queryBaseApy for underlying yield (most accurate), fallback to initial_lower_yield_range
+                const currentUnderlyingApy = baseApyMap[market.symbol] || (market.initial_lower_yield_range || 0);
 
                 // Sync with original ratex_pools for backwards compatibility if needed
                 await supabase

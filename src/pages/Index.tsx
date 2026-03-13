@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { RefreshCw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StatsCards } from '@/components/dashboard/StatsCards';
@@ -5,6 +6,7 @@ import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
 import { NewPoolsPanel } from '@/components/dashboard/NewPoolsPanel';
 import { ImpliedDropsPanel } from '@/components/dashboard/ImpliedDropsPanel';
 import { LowestYieldPanel } from '@/components/dashboard/LowestYieldPanel';
+import { PlatformFilter, type PlatformFilterValue } from '@/components/dashboard/PlatformFilter';
 import {
   useFetchMarkets,
   useFetchSpectraMarkets,
@@ -15,6 +17,7 @@ import { toast } from 'sonner';
 import { SystemHealthDialog } from '@/components/dashboard/SystemHealthDialog';
 
 const Index = () => {
+  const [platformFilter, setPlatformFilter] = useState<PlatformFilterValue>('all');
   const fetchMarkets = useFetchMarkets();
   const fetchSpectra = useFetchSpectraMarkets();
   const fetchExponent = useFetchExponentMarkets();
@@ -78,11 +81,12 @@ const Index = () => {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6 space-y-6">
         <StatsCards />
+        <PlatformFilter value={platformFilter} onChange={setPlatformFilter} />
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
-          <AlertsPanel />
-          <ImpliedDropsPanel />
-          <NewPoolsPanel />
-          <LowestYieldPanel />
+          <AlertsPanel platformFilter={platformFilter} />
+          <ImpliedDropsPanel platformFilter={platformFilter} />
+          <NewPoolsPanel platformFilter={platformFilter} />
+          <LowestYieldPanel platformFilter={platformFilter} />
         </div>
       </main>
 
