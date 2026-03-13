@@ -6,6 +6,21 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+async function notifyTelegram(chatId: number, message: string) {
+  const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
+  if (!TELEGRAM_BOT_TOKEN) return;
+  
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' }),
+    });
+  } catch (e) {
+    console.error('Telegram send error:', e);
+  }
+}
+
 const IMPLIED_APY_THRESHOLD = 0.01;
 const ALERT_COOLDOWN_HOURS = 1;
 
@@ -177,6 +192,7 @@ Deno.serve(async (req) => {
       previous_value: number;
       current_value: number;
       change_percent: number;
+      pool_name?: string;
     }[] = [];
     let inserted = 0, alertsCreated = 0;
 
@@ -264,6 +280,7 @@ Deno.serve(async (req) => {
             pool_id: poolId, alert_type: 'new_market',
             previous_value: 0, current_value: impliedApy,
             change_percent: 0,
+            pool_name: tokenName
           });
         }
 
@@ -282,6 +299,7 @@ Deno.serve(async (req) => {
                 pool_id: poolId, alert_type: 'implied_spike',
                 previous_value: prevImplied, current_value: impliedApy,
                 change_percent: change * 100,
+                pool_name: tokenName
               });
             }
           }
@@ -298,8 +316,51 @@ Deno.serve(async (req) => {
     const cleaned = await cleanupStalePools(supabase, activeMarketAddresses);
 
     for (const alert of alerts) {
-      const { error } = await supabase.from('pendle_alerts').insert(alert);
+      const { error } = await supabase.from('pendle_alerts').insert({
+          pool_id: alert.pool_id,
+          alert_type: alert.alert_type,
+          previous_value: alert.previous_value,
+          current_value: alert.current_value,
+          change_percent: alert.change_percent,
+      });
       if (!error) alertsCreated++;
+    }
+
+    // Send Telegram notifications
+    if (alerts.length > 0) {
+      const { data: users } = await supabase
+        .from('user_telegram_settings')
+        .select('*')
+        .eq('is_active', true);
+        
+      if (users && users.length > 0) {
+        for (const user of users) {
+          if (user.platforms && !user.platforms.includes('Spectra')) continue;
+          
+          let message = `🚨 <b>YieldMonitor: Изменения на Spectra</b>\n\n`;
+          let hasAlertToSend = false;
+
+          for (const alert of alerts) {
+             const prev = (alert.previous_value * 100).toFixed(2);
+             const curr = (alert.current_value * 100).toFixed(2);
+             const change = alert.change_percent.toFixed(2);
+             const sign = alert.change_percent > 0 ? "📈 Возрос" : "📉 Упал";
+             const poolName = alert.pool_name || "Unknown Pool";
+
+             if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
+                 message += `🔸 <b>${poolName}</b>\nImplied APY: ${prev}% ➡️ ${curr}%\nИзменение: ${sign} на ${change}%\n\n`;
+                 hasAlertToSend = true;
+             } else if (alert.alert_type === 'new_market') {
+                 message += `💠 <b>Новый пул добавленный на Spectra:</b>\n${poolName}\nНачальный Implied APY: ${curr}%\n\n`;
+                 hasAlertToSend = true;
+             }
+          }
+
+          if (hasAlertToSend && user.telegram_chat_id) {
+             await notifyTelegram(user.telegram_chat_id, message);
+          }
+        }
+      }
     }
 
     console.log(`[Spectra] Готово: ${inserted} пулов обновлено, ${alertsCreated} алертов создано`);

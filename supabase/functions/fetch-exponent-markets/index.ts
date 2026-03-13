@@ -6,202 +6,26 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+async function notifyTelegram(chatId: number, message: string) {
+  const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
+  if (!TELEGRAM_BOT_TOKEN) return;
+  
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' }),
+    });
+  } catch (e) {
+    console.error('Telegram send error:', e);
+  }
+}
+
 // Alert thresholds
 const IMPLIED_APY_THRESHOLD = 0.01; // 1% change threshold for implied APY
 
 // Exponent Finance is Solana-only
 const SOLANA_CHAIN_ID = 501; // Custom chain ID for Solana (Exponent)
-
-interface ExponentPool {
-  name: string;
-  underlying: string;
-  fixedApy: number;
-  liquidity: number;
-  expiry: string;
-  maturityDate: string;
-  ptToken: string;
-}
-
-// Parse pool data from Firecrawl markdown table
-function parseExponentPools(markdown: string): ExponentPool[] {
-  const pools: ExponentPool[] = [];
-
-  // Find the table section - Exponent uses a markdown table format
-  // Format: | Market | Your Positions | Liquidity | Fixed APY | Time Left |
-  const tableMatch = markdown.match(/\| Market \| Your Positions \| Liquidity \| Fixed APY \| Time Left \|[\s\S]*?(?=\n\n[^|]|\n\n$|$)/i);
-
-  if (!tableMatch) {
-    console.log('No table found in markdown, trying alternative parsing...');
-    // Alternative: parse from individual pool blocks
-    return parseExponentPoolsAlternative(markdown);
-  }
-
-  const tableContent = tableMatch[0];
-  const rows = tableContent.split('\n').filter(row => row.includes('|') && !row.includes('---') && !row.includes('Market'));
-
-  for (const row of rows) {
-    try {
-      // Parse row like:
-      // | ![...](...)eUSXSolstice PT-eUSX-01JUN26![...] | - | $957.80K | 8.56% | 113 days |
-      const cells = row.split('|').map(c => c.trim()).filter(c => c);
-
-      if (cells.length < 5) continue;
-
-      const marketCell = cells[0];
-      const liquidityCell = cells[2];
-      const apyCell = cells[3];
-      const timeLeftCell = cells[4];
-
-      // Extract token name and PT token from market cell
-      // Pattern: tokenNameProvider PT-token-date
-      const tokenMatch = marketCell.match(/([a-zA-Z0-9+]+)([A-Za-z\s]+)\s*\n?\s*(PT-[\w-]+)/);
-      let tokenName = '';
-      let provider = '';
-      let ptToken = '';
-
-      if (tokenMatch) {
-        tokenName = tokenMatch[1];
-        provider = tokenMatch[2].trim();
-        ptToken = tokenMatch[3];
-      } else {
-        // Try simpler pattern
-        const simpleMatch = marketCell.match(/(PT-[\w-]+)/);
-        if (simpleMatch) {
-          ptToken = simpleMatch[1];
-          // Extract token from PT token: PT-eUSX-01JUN26 -> eUSX
-          const tokenFromPt = ptToken.match(/PT-([a-zA-Z0-9+]+)-/);
-          tokenName = tokenFromPt ? tokenFromPt[1] : ptToken;
-        }
-      }
-
-      if (!ptToken) continue;
-
-      // Parse liquidity: $957.80K or $16.40M
-      const liquidityMatch = liquidityCell.match(/\$([\d.]+)(K|M)?/);
-      if (!liquidityMatch) continue;
-      let liquidity = parseFloat(liquidityMatch[1]);
-      if (liquidityMatch[2] === 'K') liquidity *= 1000;
-      if (liquidityMatch[2] === 'M') liquidity *= 1000000;
-
-      // Parse APY: 8.56%
-      const apyMatch = apyCell.match(/([\d.]+)%/);
-      if (!apyMatch) continue;
-      const fixedApy = parseFloat(apyMatch[1]);
-
-      // Parse time left to calculate maturity date
-      const timeMatch = timeLeftCell.match(/(\d+)\s*(days?|months?)/i);
-      let expiryDate = '';
-      if (timeMatch) {
-        const days = timeMatch[2].toLowerCase().includes('month')
-          ? parseInt(timeMatch[1]) * 30
-          : parseInt(timeMatch[1]);
-        const expiry = new Date();
-        expiry.setDate(expiry.getDate() + days);
-        expiryDate = expiry.toISOString();
-      }
-
-      // Try to extract expiry from PT token: PT-eUSX-01JUN26 -> 01JUN26
-      const dateFromPt = ptToken.match(/(\d{2})([A-Z]{3})(\d{2})$/);
-      if (dateFromPt) {
-        const monthMap: Record<string, number> = {
-          'JAN': 0, 'FEB': 1, 'MAR': 2, 'APR': 3, 'MAY': 4, 'JUN': 5,
-          'JUL': 6, 'AUG': 7, 'SEP': 8, 'OCT': 9, 'NOV': 10, 'DEC': 11
-        };
-        const day = parseInt(dateFromPt[1]);
-        const month = monthMap[dateFromPt[2]] ?? 0;
-        const year = 2000 + parseInt(dateFromPt[3]);
-        expiryDate = new Date(year, month, day).toISOString();
-      }
-
-      const displayName = provider ? `${tokenName} (${provider})` : tokenName;
-
-      pools.push({
-        name: displayName,
-        underlying: tokenName,
-        fixedApy,
-        liquidity,
-        expiry: expiryDate,
-        maturityDate: expiryDate,
-        ptToken,
-      });
-    } catch (e) {
-      console.error('Error parsing row:', e);
-    }
-  }
-
-  console.log(`Parsed ${pools.length} pools from table`);
-  return pools;
-}
-
-// Alternative parsing from card blocks
-function parseExponentPoolsAlternative(markdown: string): ExponentPool[] {
-  const pools: ExponentPool[] = [];
-
-  // Split by "Current Fixed APY" markers
-  const blocks = markdown.split(/Current Fixed APY/i);
-
-  for (let i = 1; i < blocks.length; i++) {
-    try {
-      const block = blocks[i];
-      const prevBlock = blocks[i - 1];
-
-      // Extract APY from current block
-      const apyMatch = block.match(/^\s*\n?\s*([\d.]+)%/);
-      if (!apyMatch) continue;
-      const fixedApy = parseFloat(apyMatch[1]);
-
-      // Extract token name from previous block (last token before "Current Fixed APY")
-      const tokenMatch = prevBlock.match(/([a-zA-Z0-9+]+)\s*\n\s*Maturity:/i) ||
-        prevBlock.match(/\n([a-zA-Z0-9+]+)\s*\n/g);
-
-      let tokenName = '';
-      if (tokenMatch) {
-        tokenName = Array.isArray(tokenMatch)
-          ? tokenMatch[tokenMatch.length - 1].trim().replace(/\n/g, '')
-          : tokenMatch[1];
-      }
-
-      // Extract maturity
-      const maturityMatch = prevBlock.match(/Maturity:\s*(\d{1,2}\s+\w+\s+\d{4})/i) ||
-        block.match(/Maturity:\s*(\d{1,2}\s+\w+\s+\d{4})/i);
-      let expiryDate = '';
-      if (maturityMatch) {
-        try {
-          expiryDate = new Date(maturityMatch[1]).toISOString();
-        } catch {
-          console.warn('Could not parse maturity:', maturityMatch[1]);
-        }
-      }
-
-      // Extract liquidity from nearby content
-      const liquidityMatch = block.match(/\$([\d.]+)(K|M)/i) ||
-        prevBlock.match(/\$([\d.]+)(K|M)/i);
-      let liquidity = 0;
-      if (liquidityMatch) {
-        liquidity = parseFloat(liquidityMatch[1]);
-        if (liquidityMatch[2].toUpperCase() === 'K') liquidity *= 1000;
-        if (liquidityMatch[2].toUpperCase() === 'M') liquidity *= 1000000;
-      }
-
-      if (tokenName && fixedApy > 0) {
-        pools.push({
-          name: tokenName,
-          underlying: tokenName,
-          fixedApy,
-          liquidity,
-          expiry: expiryDate,
-          maturityDate: expiryDate,
-          ptToken: `PT-${tokenName}`,
-        });
-      }
-    } catch (e) {
-      console.error('Error parsing block:', e);
-    }
-  }
-
-  console.log(`Parsed ${pools.length} pools from alternative method`);
-  return pools;
-}
 
 // Verify API key for scheduled job access
 function verifyAccess(req: Request): boolean {
@@ -218,7 +42,6 @@ function verifyAccess(req: Request): boolean {
     if (providedKey === expectedKey) return true;
   }
 
-  // Also allow access if it looks like a Supabase client request (from frontend)
   return req.headers.has('x-client-info') || req.headers.has('apikey');
 }
 
@@ -238,86 +61,82 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
-
-    if (!firecrawlApiKey) {
-      console.error('FIRECRAWL_API_KEY not configured');
-      return new Response(
-        JSON.stringify({ success: false, error: 'Firecrawl connector not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('Starting Exponent Finance markets fetch via Firecrawl...');
-    const alerts: {
-      pool_id: string;
-      alert_type: string;
-      previous_value: number;
-      current_value: number;
-      change_percent: number;
-      pool_name: string;
-    }[] = [];
+    console.log('Starting Exponent Finance markets fetch via direct API...');
+    const alerts: any[] = [];
+    const pools = [];
+    let inserted = 0;
 
-    // Scrape the Exponent Income page (main pools page)
-    const scrapeResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${firecrawlApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        url: 'https://www.exponent.finance/income',
-        formats: ['markdown'],
-        onlyMainContent: true,
-        waitFor: 15000,
-        timeout: 60000,
-      }),
+    // Fetch vaults (markets)
+    const vaultsRes = await fetch('https://api.exponent.finance/api/vaults', {
+      headers: { "Accept": "application/json" }
+    });
+    
+    // Fetch tokens metadata
+    const tokensRes = await fetch('https://api-n408.onrender.com/api/tokens', {
+      headers: { "Accept": "application/json" }
     });
 
-    const scrapeData = await scrapeResponse.json();
-
-    if (!scrapeResponse.ok || !scrapeData.success) {
-      console.error('Firecrawl scrape failed:', scrapeData);
-      return new Response(
-        JSON.stringify({ success: false, error: scrapeData.error || 'Failed to scrape Exponent' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (!vaultsRes.ok || !tokensRes.ok) {
+        throw new Error(`Failed to fetch exponent APIs: Vaults: ${vaultsRes.status}, Tokens: ${tokensRes.status}`);
     }
 
-    const markdown = scrapeData.data?.markdown || '';
-    console.log('Scraped markdown length:', markdown.length);
-    console.log('First 2000 chars:', markdown.substring(0, 2000));
+    const vaults = await vaultsRes.json();
+    const tokensDict = await tokensRes.json();
+    
+    console.log(`Fetched ${vaults.length} vaults and ${Object.keys(tokensDict).length} tokens metadata.`);
 
-    // Parse pools from markdown
-    const pools = parseExponentPools(markdown);
-    console.log(`Parsed ${pools.length} Exponent pools`);
-
-    // Store pools in database
-    let inserted = 0;
-    for (const pool of pools) {
+    for (const vault of vaults) {
       try {
-        // Create a unique market address
-        const marketAddress = `exponent-${pool.ptToken.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+        // Vault has pt_mint and sy_token which can be matched against tokensDict
+        const syTokenMint = vault.sy_token || vault.underlying_mint;
+        const ptMint = vault.pt_mint;
+        
+        // Find token names from the dictionary
+        const syTokenMeta = tokensDict[syTokenMint];
+        const ptTokenMeta = tokensDict[ptMint];
+        
+        // Fallback names if not found in dict
+        let tokenName = syTokenMeta?.name || syTokenMeta?.ticker || "Unknown";
+        let displayName = `${tokenName} (${syTokenMeta?.ticker || 'Token'})`;
+        
+        if (tokenName === "Unknown" && vault.address) {
+           displayName = `Vault ${vault.address.substring(0, 6)}...`;
+        }
 
-        // Upsert pool
+        const marketAddressRaw = ptMint || vault.address;
+        if (!marketAddressRaw) {
+          console.warn(`Skipping vault, no pt_mint or address:`, vault);
+          continue;
+        }
+        const marketAddress = `exponent-${marketAddressRaw.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+
+        const expiryDate = vault.end_timestamp || null;
+        
+        pools.push({ 
+           name: displayName,
+           address: marketAddress
+        });
+
+        // Upsert pool into pending_pools table
         const { error: poolError } = await supabase
           .from('pendle_pools')
           .upsert({
             chain_id: SOLANA_CHAIN_ID,
             market_address: marketAddress,
-            name: `[Exponent] ${pool.name}`,
-            underlying_asset: pool.underlying,
-            pt_address: pool.ptToken,
-            expiry: pool.expiry || null,
+            name: `[Exponent] ${displayName}`,
+            underlying_asset: tokenName,
+            pt_address: ptMint || vault.address,
+            sy_address: syTokenMint,
+            expiry: expiryDate,
             updated_at: new Date().toISOString(),
           }, {
             onConflict: 'chain_id,market_address'
           });
 
         if (poolError) {
-          console.error(`Error upserting Exponent pool ${pool.name}:`, poolError);
+          console.error(`Error upserting Exponent pool ${displayName}:`, poolError);
           continue;
         }
 
@@ -331,7 +150,22 @@ Deno.serve(async (req) => {
 
         if (poolData) {
           const poolId = poolData.id;
-          const impliedApy = pool.fixedApy / 100; // Convert from percent to decimal
+          
+          // Exponent implied_apy is sometimes in vault.implied_apy or vault.markets[0].last_seen_ln_implied_apy
+          let impliedApy = vault.implied_apy || 0;
+          if (impliedApy === 0 && vault.markets && vault.markets.length > 0) {
+             impliedApy = vault.markets[0].last_seen_ln_implied_apy || 0;
+          }
+          
+          const underlyingApyEstimate = impliedApy * 0.7; // Exponent API doesn't always provide clear underlying APY
+          
+          // Try to get liquidity TVL
+          let liquidity = vault.legacy_tvl_in_base_token || 0;
+          if (liquidity === 0 && vault.pt_supply && syTokenMeta?.priceUsd) {
+             liquidity = vault.pt_supply * syTokenMeta.priceUsd;
+          } else if (liquidity === 0) {
+             liquidity = 0; // Default if unparseable
+          }
 
           // Get previous rate for comparison
           const { data: prevRate } = await supabase
@@ -343,18 +177,13 @@ Deno.serve(async (req) => {
             .single();
 
           // Insert rate history
-          // Exponent shows "Fixed APY" which is analogous to implied APY
-          // Underlying APY for Exponent is typically the base yield of the underlying asset
-          // We estimate it as slightly lower than fixed APY
-          const underlyingApyEstimate = impliedApy * 0.7;
-
           await supabase
             .from('pendle_rates_history')
             .insert({
               pool_id: poolId,
               implied_apy: impliedApy,
               underlying_apy: underlyingApyEstimate,
-              liquidity: pool.liquidity,
+              liquidity: liquidity,
               volume_24h: 0,
             });
 
@@ -366,7 +195,7 @@ Deno.serve(async (req) => {
               previous_value: 0,
               current_value: impliedApy,
               change_percent: 0,
-              pool_name: pool.name,
+              pool_name: displayName,
             });
           }
 
@@ -383,16 +212,15 @@ Deno.serve(async (req) => {
                   previous_value: prevImplied,
                   current_value: impliedApy,
                   change_percent: impliedChange * 100,
-                  pool_name: pool.name,
+                  pool_name: displayName,
                 });
               }
             }
           }
-
           inserted++;
         }
       } catch (error) {
-        console.error(`Error processing Exponent pool ${pool.name}:`, error);
+        console.error(`Error processing Exponent vault ${vault.address}:`, error);
       }
     }
 
@@ -411,11 +239,48 @@ Deno.serve(async (req) => {
         });
     }
 
+    // Send Telegram notifications
+    if (alerts.length > 0) {
+      const { data: users } = await supabase
+        .from('user_telegram_settings')
+        .select('*')
+        .eq('is_active', true);
+        
+      if (users && users.length > 0) {
+        for (const user of users) {
+          if (user.platforms && !user.platforms.includes('Exponent')) continue;
+          
+          let message = `🚨 <b>YieldMonitor: Изменения на Exponent</b>\n\n`;
+          let hasAlertToSend = false;
+
+          for (const alert of alerts) {
+             const prev = (alert.previous_value * 100).toFixed(2);
+             const curr = (alert.current_value * 100).toFixed(2);
+             const change = alert.change_percent.toFixed(2);
+             const sign = alert.change_percent > 0 ? "📈 Возрос" : "📉 Упал";
+             const poolName = alert.pool_name || "Unknown Pool";
+
+             if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
+                 message += `🔸 <b>${poolName}</b>\nImplied APY: ${prev}% ➡️ ${curr}%\nИзменение: ${sign} на ${change}%\n\n`;
+                 hasAlertToSend = true;
+             } else if (alert.alert_type === 'new_market') {
+                 message += `💠 <b>Новый пул добавленный на Exponent:</b>\n${poolName}\nНачальный Implied APY: ${curr}%\n\n`;
+                 hasAlertToSend = true;
+             }
+          }
+
+          if (hasAlertToSend && user.telegram_chat_id) {
+             await notifyTelegram(user.telegram_chat_id, message);
+          }
+        }
+      }
+    }
+
     console.log(`Successfully inserted/updated ${inserted} Exponent pools`);
 
     return new Response(JSON.stringify({
       success: true,
-      pools_scraped: pools.length,
+      pools_scraped: vaults.length,
       pools_inserted: inserted,
       alerts_generated: alerts.length,
       pools: pools.slice(0, 10),
@@ -425,7 +290,8 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('Error in fetch-exponent-markets:', error);
-    return new Response(JSON.stringify({ error: 'An error occurred processing your request' }), {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return new Response(JSON.stringify({ error: 'An error occurred processing your request', message: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

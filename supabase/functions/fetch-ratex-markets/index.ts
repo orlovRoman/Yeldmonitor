@@ -9,6 +9,21 @@ const corsHeaders = {
 
 const RATEX_API_URL = 'https://api.rate-x.io/';
 
+async function notifyTelegram(chatId: number, message: string) {
+  const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
+  if (!TELEGRAM_BOT_TOKEN) return;
+  
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' }),
+    });
+  } catch (e) {
+    console.error('Telegram send error:', e);
+  }
+}
+
 // Threshold for price change alerts (20%)
 const PRICE_CHANGE_THRESHOLD = 0.20;
 // Threshold for APY change alerts (10% relative)
@@ -403,6 +418,43 @@ Deno.serve(async (req) => {
                     current_value: alert.current_value,
                     change_percent: alert.change_percent,
                 }).catch(() => { });
+        }
+
+        // Send Telegram notifications
+        if (alerts.length > 0) {
+          const { data: users } = await supabase
+            .from('user_telegram_settings')
+            .select('*')
+            .eq('is_active', true);
+            
+          if (users && users.length > 0) {
+            for (const user of users) {
+              if (user.platforms && !user.platforms.includes('RateX')) continue;
+              
+              let message = `🚨 <b>YieldMonitor: Изменения на RateX</b>\n\n`;
+              let hasAlertToSend = false;
+
+              for (const alert of alerts) {
+                 const prev = (alert.previous_value * 100).toFixed(2);
+                 const curr = (alert.current_value * 100).toFixed(2);
+                 const change = alert.change_percent.toFixed(2);
+                 const sign = alert.change_percent > 0 ? "📈 Возрос" : "📉 Упал";
+                 const poolName = alert.pool_name || "Unknown Pool";
+
+                 if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
+                     message += `🔸 <b>${poolName}</b>\nImplied APY: ${prev}% ➡️ ${curr}%\nИзменение: ${sign} на ${change}%\n\n`;
+                     hasAlertToSend = true;
+                 } else if (alert.alert_type === 'new_market') {
+                     message += `💠 <b>Новый пул добавленный на RateX:</b>\n${poolName}\nНачальный Implied APY: ${curr}%\n\n`;
+                     hasAlertToSend = true;
+                 }
+              }
+
+              if (hasAlertToSend && user.telegram_chat_id) {
+                 await notifyTelegram(user.telegram_chat_id, message);
+              }
+            }
+          }
         }
 
         return new Response(JSON.stringify({

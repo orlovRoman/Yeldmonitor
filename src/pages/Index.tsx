@@ -15,6 +15,7 @@ import {
 } from '@/hooks/usePendle';
 import { toast } from 'sonner';
 import { SystemHealthDialog } from '@/components/dashboard/SystemHealthDialog';
+import { TelegramSettingsDialog } from '@/components/dashboard/TelegramSettingsDialog';
 
 const Index = () => {
   const [platformFilter, setPlatformFilter] = useState<PlatformFilterValue>('all');
@@ -60,6 +61,7 @@ const Index = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <TelegramSettingsDialog />
             <SystemHealthDialog />
             <Button
               onClick={handleRefreshAll}
