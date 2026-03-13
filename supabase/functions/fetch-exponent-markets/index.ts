@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
     });
     
     // Fetch tokens metadata
-    const tokensRes = await fetch('https://api-n408.onrender.com/api/tokens', {
+    const tokensRes = await fetch('https://api.exponent.finance/api/tokens', {
       headers: { "Accept": "application/json" }
     });
 
@@ -83,7 +83,17 @@ Deno.serve(async (req) => {
     }
 
     const vaults = await vaultsRes.json();
-    const tokensDict = await tokensRes.json();
+    const tokensList = await tokensRes.json();
+    
+    // Convert array to dictionary for faster lookup
+    const tokensDict: Record<string, any> = {};
+    if (Array.isArray(tokensList)) {
+      for (const token of tokensList) {
+        if (token.mint) {
+          tokensDict[token.mint] = token;
+        }
+      }
+    }
     
     console.log(`Fetched ${vaults.length} vaults and ${Object.keys(tokensDict).length} tokens metadata.`);
 
@@ -98,8 +108,9 @@ Deno.serve(async (req) => {
         const ptTokenMeta = tokensDict[ptMint];
         
         // Fallback names if not found in dict
-        let tokenName = syTokenMeta?.name || syTokenMeta?.ticker || "Unknown";
-        let displayName = `${tokenName} (${syTokenMeta?.ticker || 'Token'})`;
+        let tokenName = syTokenMeta?.name || syTokenMeta?.ticker || ptTokenMeta?.name || ptTokenMeta?.ticker || "Unknown";
+        let ticker = syTokenMeta?.ticker || ptTokenMeta?.ticker || "Token";
+        let displayName = `${tokenName} (${ticker})`;
         
         if (tokenName === "Unknown" && vault.address) {
            displayName = `Vault ${vault.address.substring(0, 6)}...`;
