@@ -61,7 +61,7 @@ export function LowestYieldPanel({ platformFilter = 'all' }: { platformFilter?: 
             <div className="rounded-xl bg-card border border-border p-4">
                 <div className="flex items-center gap-2 mb-3">
                     <TrendingDown className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="font-semibold text-sm">Низкая доходность</h3>
+                    <h3 className="font-semibold text-sm">Низкая подразумеваемая доходность</h3>
                 </div>
                 <div className="flex items-center justify-center h-48">
                     <div className="animate-pulse text-muted-foreground text-xs">Загрузка...</div>
@@ -75,7 +75,7 @@ export function LowestYieldPanel({ platformFilter = 'all' }: { platformFilter?: 
             <div className="p-3 border-b border-border">
                 <div className="flex items-center gap-2">
                     <TrendingDown className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="font-semibold text-sm">Низкая доходность</h3>
+                    <h3 className="font-semibold text-sm">Низкая подразумеваемая доходность</h3>
                     <Badge variant="outline" className="text-xs ml-auto">
                         Top 10
                     </Badge>
