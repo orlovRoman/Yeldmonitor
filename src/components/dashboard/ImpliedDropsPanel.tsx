@@ -145,79 +145,72 @@ export function ImpliedDropsPanel({ platformFilter = 'all' }: { platformFilter?:
             {impliedDrops.map((alert) => {
               const underlyingApy = underlyingApyMap[alert.pool_id];
 
-              return (
-                <div
-                  key={alert.id}
-                  className="p-4 bg-destructive/5 hover:bg-destructive/10 transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium truncate">
-                          {getDisplayName(alert.pendle_pools)}
-                        </span>
-                        <Badge
-                          variant="outline"
-                          className={`text-xs ${isRateXPool(alert.pendle_pools)
-                            ? 'border-blue-500 text-blue-500'
-                            : isExponentPool(alert.pendle_pools)
-                              ? 'border-orange-500 text-orange-500'
-                              : isSpectraPool(alert.pendle_pools)
-                                ? 'border-purple-500 text-purple-500'
-                                : 'border-primary text-primary'
-                            }`}
-                        >
-                          {getPlatformName(alert.pendle_pools)}
-                        </Badge>
-                        <Badge variant="outline" className="text-xs">
-                          {CHAIN_NAMES[alert.pendle_pools?.chain_id || 1]}
-                        </Badge>
+                  return (
+                    <a
+                      key={alert.id}
+                      href={getMarketUrl(alert.pendle_pools)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block p-4 bg-destructive/5 hover:bg-destructive/10 transition-colors group"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium truncate group-hover:text-primary transition-colors">
+                              {getDisplayName(alert.pendle_pools)}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className={`text-xs ${isRateXPool(alert.pendle_pools)
+                                ? 'border-blue-500 text-blue-500'
+                                : isExponentPool(alert.pendle_pools)
+                                  ? 'border-orange-500 text-orange-500'
+                                  : isSpectraPool(alert.pendle_pools)
+                                    ? 'border-purple-500 text-purple-500'
+                                    : 'border-primary text-primary'
+                                }`}
+                            >
+                              {getPlatformName(alert.pendle_pools)}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {CHAIN_NAMES[alert.pendle_pools?.chain_id || 1]}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-3 mt-2 text-sm">
+                            <span className="text-muted-foreground">
+                              {formatPercent(alert.previous_value)}
+                            </span>
+                            <span className="text-muted-foreground">→</span>
+                            <span className="text-destructive font-medium">
+                              {formatPercent(alert.current_value)}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className="border-destructive text-destructive font-bold"
+                            >
+                              {formatChange(alert.change_percent)}
+                            </Badge>
+                          </div>
+                          {/* Underlying APY */}
+                          <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                            <span>Underlying APY:</span>
+                            <span className="font-medium text-foreground">
+                              {formatPercent(underlyingApy)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                            {new Date(alert.created_at).toLocaleString('ru-RU', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                          <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3 mt-2 text-sm">
-                        <span className="text-muted-foreground">
-                          {formatPercent(alert.previous_value)}
-                        </span>
-                        <span className="text-muted-foreground">→</span>
-                        <span className="text-destructive font-medium">
-                          {formatPercent(alert.current_value)}
-                        </span>
-                        <Badge
-                          variant="outline"
-                          className="border-destructive text-destructive font-bold"
-                        >
-                          {formatChange(alert.change_percent)}
-                        </Badge>
-                      </div>
-                      {/* Underlying APY */}
-                      <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
-                        <span>Underlying APY:</span>
-                        <span className="font-medium text-foreground">
-                          {formatPercent(underlyingApy)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {new Date(alert.created_at).toLocaleString('ru-RU', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </span>
-                      {alert.pendle_pools && (
-                        <a
-                          href={getMarketUrl(alert.pendle_pools)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-1.5 rounded-md hover:bg-muted transition-colors"
-                          title={`Открыть на ${getPlatformName(alert.pendle_pools)}`}
-                        >
-                          <ExternalLink className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
+                    </a>
+                  );
             })}
           </div>
         )}

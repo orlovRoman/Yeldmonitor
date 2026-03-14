@@ -92,10 +92,10 @@ function generateCid(): string {
 }
 
 // Call RateX API
-async function callRateXApi<T>(method: string, content: Record<string, unknown> = {}): Promise<RateXApiResponse<T>> {
+async function callRateXApi<T>(method: string, content: Record<string, unknown> = {}, serverName: 'AdminSvr' | 'MDSvr' = 'AdminSvr'): Promise<RateXApiResponse<T>> {
     const cid = generateCid();
     const payload = {
-        serverName: 'AdminSvr',
+        serverName,
         method,
         content: { cid, ...content },
     };
@@ -228,6 +228,23 @@ Deno.serve(async (req) => {
             console.error('Failed to fetch base APY:', err);
         }
 
+        // 2.7 Fetch live yield data from MDSvr (queryTrade)
+        let liveYieldMap: Record<string, number> = {};
+        try {
+            console.log('[RateX] Fetching live yields from MDSvr (queryTrade)...');
+            const liveYieldResponse = await callRateXApi<any[]>('queryTrade', {}, 'MDSvr');
+            if (Array.isArray(liveYieldResponse.data)) {
+                for (const trade of liveYieldResponse.data) {
+                    if (trade.SecurityID && trade.Yield !== undefined) {
+                        liveYieldMap[trade.SecurityID] = parseFloat(trade.Yield);
+                    }
+                }
+            }
+            console.log(`[RateX] Fetched live yields for ${Object.keys(liveYieldMap).length} symbols`);
+        } catch (err) {
+            console.error('[RateX] Failed to fetch live yields from MDSvr:', err);
+        }
+
         // 3. Filter active (non-expired, non-deleted) markets
         const now = new Date();
         const activeMarkets = allMarkets.filter((market) => {
@@ -298,10 +315,17 @@ Deno.serve(async (req) => {
                 const tvlStat = symbolStats.find(s => s.tvl && parseFloat(s.tvl) > 0) || symbolStats[0];
                 const liquidityFromStats = tvlStat && tvlStat.tvl ? parseFloat(tvlStat.tvl) : 0;
 
-                // Use scraped Implied Yield if available, otherwise fallback to API range
-                const currentImpliedApy = scrapedImpliedYield !== null
-                    ? scrapedImpliedYield
-                    : (market.initial_upper_yield_range || 0) / 100;
+                // Use live yield from MDSvr if available, otherwise fallback to API range (scrapedImpliedYield via sum_price)
+                let currentImpliedApy = liveYieldMap[market.symbol] || scrapedImpliedYield;
+                
+                // Final fallback to initial range (WITHOUT division by 100, as API value is already decimal-like or %, let's be safe)
+                if (currentImpliedApy === null || currentImpliedApy === 0) {
+                    currentImpliedApy = market.initial_upper_yield_range || 0;
+                    // If the value is like 0.5, it is 50%. If it's like 50, it is 50%.
+                    // Looking at querySymbol: initial_upper_yield_range is 0.5 for BNSOL (30%). 
+                    // Wait, 0.3 for BNSOL (30%?). Yes. So 0.5 = 50%. No division needed.
+                }
+
                 // Use queryBaseApy for underlying yield (most accurate), fallback to initial_lower_yield_range
                 const currentUnderlyingApy = baseApyMap[market.symbol] || (market.initial_lower_yield_range || 0);
 

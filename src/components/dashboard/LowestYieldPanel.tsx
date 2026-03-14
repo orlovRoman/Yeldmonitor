@@ -90,16 +90,23 @@ export function LowestYieldPanel({ platformFilter = 'all' }: { platformFilter?: 
                 ) : (
                     <div className="divide-y divide-border">
                         {lowestYieldPools.map((pool) => (
-                            <div key={pool.id} className="p-2.5 hover:bg-muted/30 transition-colors">
+                            <a
+                                key={pool.id}
+                                href={getMarketUrl(pool)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block p-2.5 hover:bg-muted/30 transition-colors group"
+                            >
                                 <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-1.5">
-                                            <span className="font-medium text-xs truncate">
+                                            <span className="font-medium text-xs truncate group-hover:text-primary transition-colors">
                                                 {getDisplayName(pool)}
                                             </span>
+                                            <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                                             <Badge
                                                 variant="outline"
-                                                className={`text-[10px] px-1 py-0 h-5 ${isRateXPool(pool)
+                                                className={`text-[10px] px-1 py-0 h-5 ml-auto ${isRateXPool(pool)
                                                     ? 'border-blue-500 text-blue-500'
                                                     : isExponentPool(pool)
                                                         ? 'border-orange-500 text-orange-500'
@@ -131,7 +138,7 @@ export function LowestYieldPanel({ platformFilter = 'all' }: { platformFilter?: 
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                            </a>
                         ))}
                     </div>
                 )}

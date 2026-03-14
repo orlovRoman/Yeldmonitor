@@ -137,7 +137,10 @@ export const getMarketUrl = (pool: { chain_id: number; market_address: string; n
   if (!pool) return '#';
 
   if (isRateXPool(pool)) {
-    return 'https://app.rate-x.io/leverage';
+    // RateX URL format: https://app.rate-x.io/leverage?symbol=xSOL-2604
+    // market_address is stored as "ratex-xSOL-2604"
+    const symbol = pool.market_address.replace('ratex-', '');
+    return `https://app.rate-x.io/leverage?symbol=${symbol}`;
   } else if (isExponentPool(pool)) {
     // Exponent Finance URL - link to the Income page
     return 'https://www.exponent.finance/income';
