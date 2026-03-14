@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ExternalLink, TrendingUp, TrendingDown, Clock } from 'lucide-react';
 import { usePendlePools } from '@/hooks/usePendle';
-import { CHAIN_NAMES, CHAIN_COLORS } from '@/types/pendle';
+import { CHAIN_NAMES, CHAIN_COLORS, getMarketUrl, getPlatformName } from '@/types/pendle';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -130,11 +130,12 @@ export function PoolsTable({ onSelectPool, selectedPoolId }: PoolsTableProps) {
                     <div className="flex items-center gap-2">
                       <span className={`truncate max-w-[150px] ${isRateX ? 'text-blue-600 dark:text-blue-400' : ''}`}>{pool.name}</span>
                       <a
-                        href={`https://app.pendle.finance/trade/pools/${pool.market_address}?chain=${pool.chain_id === 1 ? 'ethereum' : pool.chain_id === 42161 ? 'arbitrum' : 'ethereum'}`}
+                        href={getMarketUrl(pool)}
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
                         className="text-muted-foreground hover:text-primary"
+                        title={`Открыть на ${getPlatformName(pool)}`}
                       >
                         <ExternalLink className="h-3.5 w-3.5" />
                       </a>
