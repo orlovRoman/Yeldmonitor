@@ -461,15 +461,16 @@ Deno.serve(async (req) => {
               for (const alert of alerts) {
                  const prev = (alert.previous_value * 100).toFixed(2);
                  const curr = (alert.current_value * 100).toFixed(2);
-                 const change = alert.change_percent.toFixed(2);
-                 const sign = alert.change_percent > 0 ? "📈 Возрос" : "📉 Упал";
                  const poolName = alert.pool_name || "Unknown Pool";
+                 const symbol = alert.pool_id.replace('ratex-', '');
+                 const url = `https://app.rate-x.io/leverage?symbol=${symbol}`;
+                 const linkName = `<a href="${url}">${poolName}</a>`;
 
                  if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
-                     message += `🔸 <b>${poolName}</b>\nImplied APY: ${prev}% ➡️ ${curr}%\nИзменение: ${sign} на ${change}%\n\n`;
+                     message += `🔸 <b>${linkName}</b> (Solana)\nImplied APY: ${prev}% ➡️ ${curr}%\n\n`;
                      hasAlertToSend = true;
                  } else if (alert.alert_type === 'new_market') {
-                     message += `💠 <b>Новый пул добавленный на RateX:</b>\n${poolName}\nНачальный Implied APY: ${curr}%\n\n`;
+                     message += `💠 <b>Новый пул на RateX:</b>\n${linkName} (Solana)\nНачальный Implied APY: ${curr}%\n\n`;
                      hasAlertToSend = true;
                  }
               }

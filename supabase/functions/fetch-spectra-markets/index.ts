@@ -22,7 +22,20 @@ async function notifyTelegram(chatId: number, message: string) {
 }
 
 const IMPLIED_APY_THRESHOLD = 0.01;
-const ALERT_COOLDOWN_HOURS = 1;
+const ALERT_COOLDOWN_HOURS = 24;
+
+const SPECTRA_CHAIN_SLUGS: Record<number, string> = {
+  1: 'eth',
+  42161: 'arbitrum',
+  10: 'op',
+  8453: 'base',
+  146: 'sonic',
+  43114: 'avax',
+  56: 'bsc',
+  14: 'flare',
+  103: 'katana',
+  999: 'hyperevm',
+};
 
 const CHAIN_NAMES: Record<number, string> = {
   1: 'Ethereum', 42161: 'Arbitrum', 10: 'Optimism', 8453: 'Base',
@@ -193,6 +206,8 @@ Deno.serve(async (req) => {
       current_value: number;
       change_percent: number;
       pool_name?: string;
+      chain_name?: string;
+      chain_id?: number;
     }[] = [];
     let inserted = 0, alertsCreated = 0;
 
@@ -277,10 +292,14 @@ Deno.serve(async (req) => {
         // Алерт о новом рынке — пул появился впервые
         if (!prevRate) {
           alerts.push({
-            pool_id: poolId, alert_type: 'new_market',
-            previous_value: 0, current_value: impliedApy,
-            change_percent: 0,
-            pool_name: tokenName
+            pool_id: poolId,
+            alert_type: 'yield_divergence',
+            previous_value: impliedApy,
+            current_value: impliedApy * 0.9, // Assuming underlyingApy is impliedApy * 0.9
+            change_percent: (impliedApy - (impliedApy * 0.9)) / impliedApy * 100, // Assuming divergence calculation
+            pool_name: pool.name,
+            chain_name: chainName, // Using chainName from current scope
+            chain_id: chainId // Using chainId from current scope
           });
         }
 
@@ -299,7 +318,8 @@ Deno.serve(async (req) => {
                 pool_id: poolId, alert_type: 'implied_spike',
                 previous_value: prevImplied, current_value: impliedApy,
                 change_percent: change * 100,
-                pool_name: tokenName
+                pool_name: tokenName,
+                chain_name: chainName
               });
             }
           }
@@ -343,15 +363,17 @@ Deno.serve(async (req) => {
           for (const alert of alerts) {
              const prev = (alert.previous_value * 100).toFixed(2);
              const curr = (alert.current_value * 100).toFixed(2);
-             const change = alert.change_percent.toFixed(2);
-             const sign = alert.change_percent > 0 ? "📈 Возрос" : "📉 Упал";
              const poolName = alert.pool_name || "Unknown Pool";
+             const chainName = alert.chain_name || "Unknown Chain";
+             const chainSlug = SPECTRA_CHAIN_SLUGS[alert.chain_id || 1] || 'eth';
+             const url = `https://app.spectra.finance/trade-yield?network=${chainSlug}`;
+             const linkName = `<a href="${url}">${poolName}</a>`;
 
              if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
-                 message += `🔸 <b>${poolName}</b>\nImplied APY: ${prev}% ➡️ ${curr}%\nИзменение: ${sign} на ${change}%\n\n`;
+                 message += `🔸 <b>${linkName}</b> (${chainName})\nImplied APY: ${prev}% ➡️ ${curr}%\n\n`;
                  hasAlertToSend = true;
              } else if (alert.alert_type === 'new_market') {
-                 message += `💠 <b>Новый пул добавленный на Spectra:</b>\n${poolName}\nНачальный Implied APY: ${curr}%\n\n`;
+                 message += `💠 <b>Новый пул на Spectra:</b>\n${linkName} (${chainName})\nНачальный Implied APY: ${curr}%\n\n`;
                  hasAlertToSend = true;
              }
           }

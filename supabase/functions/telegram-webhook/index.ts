@@ -104,20 +104,81 @@ Deno.serve(async (req) => {
            await sendMessage(chatId, "🛑 Уведомления приостановлены. Отправьте любой /start код с сайта, чтобы возобновить.");
          }
       } else if (text === '/status') {
-         const { data: settings } = await supabase
+          const { data: settings } = await supabase
+             .from('user_telegram_settings')
+             .select('*')
+             .eq('telegram_chat_id', chatId)
+             .single();
+             
+          if (settings) {
+             const status = settings.is_active ? "🔔 <b>Активны</b>" : "🛑 <b>Приостановлены</b>";
+             const platforms = settings.platforms && settings.platforms.length > 0 ? settings.platforms.join(', ') : "Все";
+             
+             await sendMessage(chatId, `📊 <b>Ваш профиль YieldMonitor</b>\n\n` +
+               `👤 Юзер: <code>${username}</code>\n` +
+               `Уведомления: ${status}\n\n` +
+               `⚙️ <b>Настройки:</b>\n` +
+               `▫️ Порог Implied: <b>${settings.implied_apy_threshold_percent}%</b>\n` +
+               `▫️ Платформы: <code>${platforms}</code>\n\n` +
+               `Введите /help для списка всех команд.`);
+          } else {
+             await sendMessage(chatId, "⚠️ Ваш аккаунт не привязан к YieldMonitor.\nИспользуйте команду /start с кодом из личного кабинета.");
+          }
+      } else if (text === '/help') {
+          await sendMessage(chatId, `📖 <b>Доступные команды:</b>\n\n` +
+            `/status - Показать текущие настройки и состояние\n` +
+            `/update - Принудительно обновить данные прямо сейчас\n` +
+            `/stop - Приостановить получение уведомлений\n` +
+            `/start - Привязать аккаунт (нужен код)\n\n` +
+            `<i>Бот автоматически присылает уведомления при резких скачках доходности.</i>`);
+      } else if (text === '/update') {
+          // Check if user is linked
+          const { data: user } = await supabase
             .from('user_telegram_settings')
             .select('*')
             .eq('telegram_chat_id', chatId)
             .single();
+
+          if (!user) {
+            await sendMessage(chatId, "❌ Сначала привяжите аккаунт через /start.");
+          } else {
+            const statusStr = user.is_active ? "🔔 Уведомления включены" : "🛑 Уведомления выключены";
+            await sendMessage(chatId, `🔄 <b>Запускаю обновление данных...</b>\n<i>${statusStr}</i>\n\nЭто может занять до 1 минуты.`);
             
-         if (settings) {
-            const status = settings.is_active ? "✅ Включены" : "🛑 Приостановлены";
-            await sendMessage(chatId, `📊 Ваша статистика:\n\nУстановочный профиль: <b>${settings.telegram_username}</b>\nУведомления: ${status}\nПорог Implied APY: <b>${settings.implied_apy_threshold_percent}%</b>\nПлатформы: ${settings.platforms?.join(', ')}`);
-         } else {
-            await sendMessage(chatId, "Ваш аккаунт не привязан к YieldMonitor.");
-         }
+            try {
+              const functions = [
+                'fetch-pendle-markets',
+                'fetch-spectra-markets',
+                'fetch-exponent-markets',
+                'fetch-ratex-markets'
+              ];
+
+              // Trigger all updates in parallel
+              const results = await Promise.all(functions.map(async (fn) => {
+                const res = await fetch(`${SUPABASE_URL}/functions/v1/${fn}`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                    'Content-Type': 'application/json'
+                  }
+                });
+                return { name: fn, ok: res.ok };
+              }));
+
+              const failed = results.filter(r => !r.ok).map(r => r.name);
+              if (failed.length > 0) {
+                console.error('Some updates failed:', failed);
+                await sendMessage(chatId, `⚠️ Обновление завершено с ошибками в ${failed.length} модулях. Но основные данные были успешно обработаны.`);
+              } else {
+                await sendMessage(chatId, "✅ <b>Обновление успешно завершено!</b>\nВсе платформы синхронизированы.");
+              }
+            } catch (e) {
+              console.error('Update trigger error:', e);
+              await sendMessage(chatId, "❌ Произошла ошибка при запуске обновления.");
+            }
+          }
       } else {
-         await sendMessage(chatId, "Я понимаю только команды /start, /stop и /status.");
+          await sendMessage(chatId, `❓ <b>Неизвестная команда.</b>\n\nЯ понимаю основные команды управления. Введите /help, чтобы увидеть список всех команд.`);
       }
     }
 

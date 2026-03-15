@@ -36,6 +36,19 @@ const SUPPORTED_CHAINS = [
   { chainId: 80094, name: 'Berachain' },
 ];
 
+const CHAIN_SLUGS: Record<number, string> = {
+  1: 'ethereum',
+  42161: 'arbitrum',
+  56: 'bsc',
+  10: 'optimism',
+  5000: 'mantle',
+  8453: 'base',
+  146: 'sonic',
+  999: 'hyperliquid',
+  21000000: 'corn',
+  80094: 'berachain',
+};
+
 const ALERT_THRESHOLD = 0.20; // 20% change threshold for underlying APY
 const IMPLIED_APY_THRESHOLD = 0.01; // 1% change threshold for implied APY
 
@@ -102,6 +115,7 @@ Deno.serve(async (req) => {
       change_percent: number;
       pool_name: string;
       chain_name: string;
+      chain_id: number;
     }[] = [];
 
     // Fetch markets from all chains
@@ -211,6 +225,7 @@ Deno.serve(async (req) => {
             change_percent: 0,
             pool_name: market.name,
             chain_name: market.chainName,
+            chain_id: market.chainId
           });
         }
 
@@ -231,6 +246,7 @@ Deno.serve(async (req) => {
                 change_percent: impliedChange * 100, // Keep sign for direction
                 pool_name: market.name,
                 chain_name: market.chainName,
+                chain_id: market.chainId
               });
             }
           }
@@ -247,6 +263,7 @@ Deno.serve(async (req) => {
                 change_percent: underlyingChange * 100, // Keep sign for direction
                 pool_name: market.name,
                 chain_name: market.chainName,
+                chain_id: market.chainId
               });
             }
           }
@@ -315,20 +332,21 @@ Deno.serve(async (req) => {
           for (const alert of alerts) {
              const prev = (alert.previous_value * 100).toFixed(2);
              const curr = (alert.current_value * 100).toFixed(2);
-             const change = alert.change_percent.toFixed(2);
-             const sign = alert.change_percent > 0 ? "📈 Возрос" : "📉 Упал";
+             const chainSlug = CHAIN_SLUGS[alert.chain_id] || 'ethereum';
+             const url = `https://app.pendle.finance/trade/markets/${alert.pool_id}?chain=${chainSlug}`;
+             const linkName = `<a href="${url}">${alert.pool_name}</a>`;
 
              if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
-                 message += `🔸 <b>${alert.pool_name}</b>\nImplied APY: ${prev}% ➡️ ${curr}%\nИзменение: ${sign} на ${change}%\n\n`;
+                 message += `🔸 <b>${linkName}</b> (${alert.chain_name})\nImplied APY: ${prev}% ➡️ ${curr}%\n\n`;
                  hasAlertToSend = true;
              } else if (alert.alert_type === 'underlying_spike' && Math.abs(alert.change_percent) >= Number(user.underlying_apy_threshold_percent)) {
-                 message += `🔹 <b>${alert.pool_name}</b>\nUnderlying APY: ${prev}% ➡️ ${curr}%\nИзменение: ${sign} на ${change}%\n\n`;
+                 message += `🔹 <b>${linkName}</b> (${alert.chain_name})\nUnderlying APY: ${prev}% ➡️ ${curr}%\n\n`;
                  hasAlertToSend = true;
              } else if (alert.alert_type === 'yield_divergence') {
-                 message += `⚠️ <b>Разрыв доходности: ${alert.pool_name}</b>\nUnderlying (${curr}%) сильно превышает Implied (${prev}%)\n\n`;
+                 message += `⚠️ <b>Разрыв доходности: ${linkName}</b> (${alert.chain_name})\nUnderlying (${curr}%) сильно превышает Implied (${prev}%)\n\n`;
                  hasAlertToSend = true;
              } else if (alert.alert_type === 'new_market') {
-                 message += `💠 <b>Новый пул добавленный на Pendle:</b>\n${alert.pool_name}\nНачальный Implied APY: ${curr}%\n\n`;
+                 message += `💠 <b>Новый пул на Pendle:</b>\n${linkName} (${alert.chain_name})\nНачальный Implied APY: ${curr}%\n\n`;
                  hasAlertToSend = true;
              }
           }
