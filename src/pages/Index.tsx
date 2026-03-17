@@ -50,7 +50,7 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="w-full px-4 md:px-8 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
               <span className="text-xl font-bold text-primary-foreground">Y</span>
@@ -81,7 +81,7 @@ const Index = () => {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-6 space-y-6">
+      <main className="w-full px-4 md:px-8 py-6 space-y-6">
         <StatsCards />
         <PlatformFilter value={platformFilter} onChange={setPlatformFilter} />
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -94,7 +94,7 @@ const Index = () => {
 
       {/* Footer */}
       <footer className="border-t border-border mt-12 py-6">
-        <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
+        <div className="w-full px-4 md:px-8 text-center text-sm text-muted-foreground">
           <p>Данные обновляются каждые 15 минут • Порог алерта: 1% изменение</p>
           <p className="mt-1">Powered by Pendle + Spectra + Exponent + RateX Finance</p>
         </div>

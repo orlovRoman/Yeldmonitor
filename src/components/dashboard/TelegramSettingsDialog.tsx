@@ -230,7 +230,7 @@ export function TelegramSettingsDialog() {
                 <div className="flex items-center justify-between">
                   <Label className="flex flex-col gap-1">
                     <span className="font-semibold">Статус уведомлений</span>
-                    <span className="text-xs text-muted-foreground">Временно приостановить отправку</span>
+                    <span className="text-xs text-muted-foreground">Отправка включена/выключена</span>
                   </Label>
                   <Switch 
                     checked={settings.is_active} 
