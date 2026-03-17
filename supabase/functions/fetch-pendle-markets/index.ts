@@ -118,6 +118,7 @@ Deno.serve(async (req) => {
       chain_id: number;
       market_address: string;
       underlying_symbol: string;
+      underlying_apy: number;
     }[] = [];
 
     // Fetch markets from all chains
@@ -229,7 +230,8 @@ Deno.serve(async (req) => {
             chain_name: market.chainName,
             chain_id: market.chainId,
             market_address: market.address,
-            underlying_symbol: market.underlyingAsset?.symbol || '?'
+            underlying_symbol: market.underlyingAsset?.symbol || '?',
+            underlying_apy: underlyingApy
           });
         }
 
@@ -252,7 +254,8 @@ Deno.serve(async (req) => {
                 chain_name: market.chainName,
                 chain_id: market.chainId,
                 market_address: market.address,
-                underlying_symbol: market.underlyingAsset?.symbol || '?'
+                underlying_symbol: market.underlyingAsset?.symbol || '?',
+                underlying_apy: underlyingApy
               });
             }
           }
@@ -271,7 +274,8 @@ Deno.serve(async (req) => {
                 chain_name: market.chainName,
                 chain_id: market.chainId,
                 market_address: market.address,
-                underlying_symbol: market.underlyingAsset?.symbol || '?'
+                underlying_symbol: market.underlyingAsset?.symbol || '?',
+                underlying_apy: underlyingApy
               });
             }
           }
@@ -300,7 +304,8 @@ Deno.serve(async (req) => {
               chain_name: market.chainName,
               chain_id: market.chainId,
               market_address: market.address,
-              underlying_symbol: market.underlyingAsset?.symbol || '?'
+              underlying_symbol: market.underlyingAsset?.symbol || '?',
+              underlying_apy: underlyingApy
             });
           }
         }
@@ -349,6 +354,9 @@ Deno.serve(async (req) => {
              const marketName = alert.pool_name.replace('PT ', '');
 
              if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
+                 const currValue = (alert.current_value * 100).toFixed(2);
+                 const underlyingValue = (alert.underlying_apy * 100).toFixed(2);
+                 
                  const isIncrease = alert.change_percent > 0;
                  const notifyImpliedIncrease = user.notify_implied_increase !== false; // true по умолчанию
                  
@@ -357,7 +365,9 @@ Deno.serve(async (req) => {
                      continue;
                  }
                  
-                 message += `🔸 <b>${linkName}</b> (${marketName} @ ${alert.chain_name})\nImplied APY: ${prev}% ➡️ ${curr}%\n\n`;
+                 message += `🔸 <b>${linkName}</b> (${marketName} @ ${alert.chain_name})\n`;
+                 message += `Implied APY: ${prev}% ➡️ ${currValue}%\n`;
+                 message += `Underlying APY: ${underlyingValue}%\n\n`;
                  hasAlertToSend = true;
              } else if (alert.alert_type === 'underlying_spike' && Math.abs(alert.change_percent) >= Number(user.underlying_apy_threshold_percent)) {
                  message += `🔹 <b>${linkName}</b> (${alert.chain_name})\nUnderlying APY: ${prev}% ➡️ ${curr}%\n\n`;

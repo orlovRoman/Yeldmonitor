@@ -262,7 +262,9 @@ Deno.serve(async (req) => {
             current_value: number;
             change_percent: number;
             pool_name: string;
-            market_symbol: string;
+            market_symbol?: string;
+            underlying_symbol?: string;
+            underlying_apy?: number;
         }[] = [];
 
         // 4. Process each active market
@@ -394,6 +396,8 @@ Deno.serve(async (req) => {
                         change_percent: 0,
                         pool_name: market.symbol_name,
                         market_symbol: market.symbol,
+                        underlying_symbol: market.symbol,
+                        underlying_apy: baseApyMap[market.symbol] || 0
                     });
                 }
 
@@ -468,6 +472,8 @@ Deno.serve(async (req) => {
                     const linkName = `<a href="${url}">${alert.market_symbol}</a>`;
 
                     if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
+                        const underlyingValue = ((alert.underlying_apy || 0) * 100).toFixed(2);
+                        
                         const isIncrease = alert.change_percent > 0;
                         const notifyImpliedIncrease = user.notify_implied_increase !== false; // true по умолчанию
                         
@@ -476,12 +482,14 @@ Deno.serve(async (req) => {
                             continue;
                         }
                         
-                        message += `🔸 <b>${linkName}</b> (${alert.pool_name} @ Solana)\nImplied APY: ${prev}% ➡️ ${curr}%\n\n`;
+                        message += `🔸 <b>${linkName}</b> (${alert.pool_name} @ Solana)\n`;
+                        message += `Implied APY: ${prev}% ➡️ ${curr}%\n`;
+                        message += `Underlying APY: ${underlyingValue}%\n\n`;
                         hasAlertToSend = true;
-                 } else if (alert.alert_type === 'new_market') {
-                     message += `💠 <b>Новый пул на RateX:</b>\n${linkName} (Solana)\nНачальный Implied APY: ${curr}%\n\n`;
-                     hasAlertToSend = true;
-                 }
+                   } else if (alert.alert_type === 'new_market') {
+                        message += `💠 <b>Новый пул на RateX:</b>\n${linkName} (Solana)\nНачальный Implied APY: ${curr}%\n\n`;
+                        hasAlertToSend = true;
+                   }
               }
 
               if (hasAlertToSend && user.telegram_chat_id) {

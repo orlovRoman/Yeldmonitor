@@ -72,6 +72,8 @@ Deno.serve(async (req) => {
       change_percent: number;
       pool_name: string;
       underlying_symbol: string;
+      real_address?: string;
+      underlying_apy?: number;
     }[] = [];
     const pools = [];
     let inserted = 0;
@@ -285,6 +287,8 @@ Deno.serve(async (req) => {
               change_percent: 0,
               pool_name: displayName,
               underlying_symbol: ticker,
+              real_address: marketAddress,
+              underlying_apy: underlyingApyEstimate,
             });
           }
 
@@ -300,10 +304,11 @@ Deno.serve(async (req) => {
                   alert_type: 'implied_spike',
                   previous_value: prevImplied,
                   current_value: impliedApy,
-                   change_percent: impliedChange * 100,
-                   pool_name: displayName,
-                   underlying_symbol: ticker,
-                });
+                   change_percent: ((impliedApy - prevImplied) / prevImplied) * 100,
+                pool_name: displayName,
+                underlying_symbol: ticker,
+                underlying_apy: underlyingApyEstimate
+              });
               }
             }
           }
@@ -349,18 +354,21 @@ Deno.serve(async (req) => {
               const poolName = alert.pool_name || "Unknown Pool";
               const url = 'https://www.exponent.finance/income';
               const linkName = `<a href="${url}">${alert.underlying_symbol}</a>`;
-
               if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
-                  const isIncrease = alert.change_percent > 0;
-                  const notifyImpliedIncrease = user.notify_implied_increase !== false; // true по умолчанию
-                  
-                  if (isIncrease && !notifyImpliedIncrease) {
-                      // Пользователь отключил уведомления о росте Implied APY
-                      continue;
-                  }
-                  
-                  message += `🔸 <b>${linkName}</b> (${poolName} @ Solana)\nImplied APY: ${prev}% ➡️ ${curr}%\n\n`;
-                  hasAlertToSend = true;
+                        const underlyingValue = ((alert.underlying_apy || 0) * 100).toFixed(2);
+                        
+                        const isIncrease = alert.change_percent > 0;
+                        const notifyImpliedIncrease = user.notify_implied_increase !== false; // true по умолчанию
+                        
+                        if (isIncrease && !notifyImpliedIncrease) {
+                            // Пользователь отключил уведомления о росте Implied APY
+                            continue;
+                        }
+                        
+                        message += `🔸 <b>${linkName}</b> (${alert.pool_name} @ Solana)\n`;
+                        message += `Implied APY: ${prev}% ➡️ ${curr}%\n`;
+                        message += `Underlying APY: ${underlyingValue}%\n\n`;
+                        hasAlertToSend = true;
               } else if (alert.alert_type === 'new_market') {
                   message += `💠 <b>Новый пул на Exponent:</b>\n${linkName} (${poolName} @ Solana)\nНачальный Implied APY: ${curr}%\n\n`;
                   hasAlertToSend = true;

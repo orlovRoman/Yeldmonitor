@@ -210,6 +210,7 @@ Deno.serve(async (req) => {
       chain_id?: number;
       real_address?: string;
       underlying_symbol?: string;
+      underlying_apy?: number;
     }[] = [];
     let inserted = 0, alertsCreated = 0;
 
@@ -373,7 +374,9 @@ Deno.serve(async (req) => {
               const url = `https://app.spectra.finance/trade-yield/${alert.real_address}?network=${chainSlug}`;
               const linkName = `<a href="${url}">${alert.underlying_symbol}</a>`;
 
-              if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
+             if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
+                  const underlyingValue = ((alert.underlying_apy || 0) * 100).toFixed(2);
+                  
                   const isIncrease = alert.change_percent > 0;
                   const notifyImpliedIncrease = user.notify_implied_increase !== false; // true по умолчанию
                   
@@ -382,7 +385,9 @@ Deno.serve(async (req) => {
                       continue;
                   }
                   
-                  message += `🔸 <b>${linkName}</b> (${alert.pool_name} @ ${chainName})\nImplied APY: ${prev}% ➡️ ${curr}%\n\n`;
+                  message += `🔸 <b>${linkName}</b> (${alert.pool_name} @ ${chainName})\n`;
+                  message += `Implied APY: ${prev}% ➡️ ${curr}%\n`;
+                  message += `Underlying APY: ${underlyingValue}%\n\n`;
                   hasAlertToSend = true;
              } else if (alert.alert_type === 'new_market') {
                  message += `💠 <b>Новый пул на Spectra:</b>\n${linkName} (${chainName})\nНачальный Implied APY: ${curr}%\n\n`;
