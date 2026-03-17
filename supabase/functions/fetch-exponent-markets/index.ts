@@ -64,7 +64,15 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log('Starting Exponent Finance markets fetch via direct API...');
-    const alerts: any[] = [];
+    const alerts: {
+      pool_id: string;
+      alert_type: string;
+      previous_value: number;
+      current_value: number;
+      change_percent: number;
+      pool_name: string;
+      underlying_symbol: string;
+    }[] = [];
     const pools = [];
     let inserted = 0;
 
@@ -276,6 +284,7 @@ Deno.serve(async (req) => {
               current_value: impliedApy,
               change_percent: 0,
               pool_name: displayName,
+              underlying_symbol: ticker,
             });
           }
 
@@ -291,8 +300,9 @@ Deno.serve(async (req) => {
                   alert_type: 'implied_spike',
                   previous_value: prevImplied,
                   current_value: impliedApy,
-                  change_percent: impliedChange * 100,
-                  pool_name: displayName,
+                   change_percent: impliedChange * 100,
+                   pool_name: displayName,
+                   underlying_symbol: ticker,
                 });
               }
             }
@@ -336,17 +346,25 @@ Deno.serve(async (req) => {
           for (const alert of alerts) {
              const prev = (alert.previous_value * 100).toFixed(2);
              const curr = (alert.current_value * 100).toFixed(2);
-             const poolName = alert.pool_name || "Unknown Pool";
-             const url = 'https://www.exponent.finance/income';
-             const linkName = `<a href="${url}">${poolName}</a>`;
+              const poolName = alert.pool_name || "Unknown Pool";
+              const url = 'https://www.exponent.finance/income';
+              const linkName = `<a href="${url}">${alert.underlying_symbol}</a>`;
 
-             if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
-                 message += `🔸 <b>${linkName}</b> (Solana)\nImplied APY: ${prev}% ➡️ ${curr}%\n\n`;
-                 hasAlertToSend = true;
-             } else if (alert.alert_type === 'new_market') {
-                 message += `💠 <b>Новый пул на Exponent:</b>\n${linkName} (Solana)\nНачальный Implied APY: ${curr}%\n\n`;
-                 hasAlertToSend = true;
-             }
+              if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
+                  const isIncrease = alert.change_percent > 0;
+                  const notifyImpliedIncrease = user.notify_implied_increase !== false; // true по умолчанию
+                  
+                  if (isIncrease && !notifyImpliedIncrease) {
+                      // Пользователь отключил уведомления о росте Implied APY
+                      continue;
+                  }
+                  
+                  message += `🔸 <b>${linkName}</b> (${poolName} @ Solana)\nImplied APY: ${prev}% ➡️ ${curr}%\n\n`;
+                  hasAlertToSend = true;
+              } else if (alert.alert_type === 'new_market') {
+                  message += `💠 <b>Новый пул на Exponent:</b>\n${linkName} (${poolName} @ Solana)\nНачальный Implied APY: ${curr}%\n\n`;
+                  hasAlertToSend = true;
+              }
           }
 
           if (hasAlertToSend && user.telegram_chat_id) {

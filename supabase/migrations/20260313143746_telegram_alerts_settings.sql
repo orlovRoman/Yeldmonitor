@@ -21,13 +21,32 @@ CREATE INDEX IF NOT EXISTS idx_user_tg_settings_chat_id ON public.user_telegram_
 ALTER TABLE public.user_telegram_settings ENABLE ROW LEVEL SECURITY;
 
 -- Allow public read/write (since there is no strict auth currently, users manage by random codes)
-CREATE POLICY "Allow public insert to user_telegram_settings" ON public.user_telegram_settings FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public read of user_telegram_settings" ON public.user_telegram_settings FOR SELECT USING (true);
-CREATE POLICY "Allow public update of user_telegram_settings" ON public.user_telegram_settings FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete of user_telegram_settings" ON public.user_telegram_settings FOR DELETE USING (true);
+DO $$ 
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'user_telegram_settings' AND policyname = 'Allow public insert to user_telegram_settings') THEN
+    CREATE POLICY "Allow public insert to user_telegram_settings" ON public.user_telegram_settings FOR INSERT WITH CHECK (true);
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'user_telegram_settings' AND policyname = 'Allow public read of user_telegram_settings') THEN
+    CREATE POLICY "Allow public read of user_telegram_settings" ON public.user_telegram_settings FOR SELECT USING (true);
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'user_telegram_settings' AND policyname = 'Allow public update of user_telegram_settings') THEN
+    CREATE POLICY "Allow public update of user_telegram_settings" ON public.user_telegram_settings FOR UPDATE USING (true);
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'user_telegram_settings' AND policyname = 'Allow public delete of user_telegram_settings') THEN
+    CREATE POLICY "Allow public delete of user_telegram_settings" ON public.user_telegram_settings FOR DELETE USING (true);
+  END IF;
+END $$;
 
 -- Update timestamp trigger
-CREATE TRIGGER update_user_telegram_settings_updated_at
-  BEFORE UPDATE ON public.user_telegram_settings
-  FOR EACH ROW
-  EXECUTE FUNCTION public.update_updated_at_column();
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_user_telegram_settings_updated_at') THEN
+    CREATE TRIGGER update_user_telegram_settings_updated_at
+      BEFORE UPDATE ON public.user_telegram_settings
+      FOR EACH ROW
+      EXECUTE FUNCTION public.update_updated_at_column();
+  END IF;
+END $$;

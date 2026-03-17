@@ -24,6 +24,7 @@ type UserSettings = {
   underlying_apy_threshold_percent: number;
   platforms: string[];
   is_active: boolean;
+  notify_implied_increase: boolean;
 };
 
 const PLATFORMS_LIST = ["Pendle", "Spectra", "Exponent", "RateX"];
@@ -234,6 +235,17 @@ export function TelegramSettingsDialog() {
                   <Switch 
                     checked={settings.is_active} 
                     onCheckedChange={(val) => handleUpdateSettings({ is_active: val })}
+                  />
+                </div>
+                
+                <div className="flex items-center justify-between pt-2">
+                  <Label className="flex flex-col gap-1">
+                    <span className="font-semibold">Уведомлять о росте Implied APY</span>
+                    <span className="text-xs text-muted-foreground">Если выключено — только о падении</span>
+                  </Label>
+                  <Switch 
+                    checked={settings.notify_implied_increase} 
+                    onCheckedChange={(val) => handleUpdateSettings({ notify_implied_increase: val })}
                   />
                 </div>
                 

@@ -13,15 +13,28 @@ const corsHeaders = {
 
 async function sendMessage(chatId: number | string, text: string) {
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-  await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: text,
-      parse_mode: 'HTML'
-    }),
-  });
+  console.log(`[Telegram] Sending message to ${chatId}...`);
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: 'HTML'
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      console.error(`[Telegram] Error sending message:`, result);
+    } else {
+      console.log(`[Telegram] Message sent successfully to ${chatId}`);
+    }
+    return result;
+  } catch (error) {
+    console.error(`[Telegram] Network error while sending message:`, error);
+    throw error;
+  }
 }
 
 Deno.serve(async (req) => {
@@ -30,24 +43,31 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const url = new URL(req.url);
-    // Для безопасности можно добавить secret_token в параметры вебхука (мы сделаем это позже)
+    const requestUrl = new URL(req.url);
+    console.log(`[Webhook] Received ${req.method} request to ${requestUrl.pathname}`);
 
     const update = await req.json();
+    console.log(`[Webhook] Update payload:`, JSON.stringify(update));
+
+    if (!TELEGRAM_BOT_TOKEN) {
+      console.error('[Webhook] TELEGRAM_BOT_TOKEN is missing!');
+      return new Response(JSON.stringify({ error: 'Token missing' }), { status: 500 });
+    }
 
     if (update.message && update.message.text) {
       const chatId = update.message.chat.id;
       const text = update.message.text.trim();
       const username = update.message.from?.username || update.message.from?.first_name || 'User';
 
+      console.log(`[Webhook] Processing command "${text}" from user ${username} (${chatId})`);
+
       if (text.startsWith('/start')) {
         const parts = text.split(' ');
         
         if (parts.length > 1) {
           const connectionCode = parts[1];
-          console.log(`User ${username} trying to connect with code ${connectionCode}`);
+          console.log(`[Webhook] Connection attempt with code ${connectionCode}`);
           
-          // Check if code exists
           const { data: existing, error } = await supabase
             .from('user_telegram_settings')
             .select('*')
@@ -57,11 +77,9 @@ Deno.serve(async (req) => {
           if (error || !existing) {
             await sendMessage(chatId, "❌ Неверный или устаревший код подключения. Попробуйте сгенерировать новый на сайте YieldMonitor.");
           } else {
-            // Check if already connected by someone else
             if (existing.telegram_chat_id && existing.telegram_chat_id !== chatId) {
                  await sendMessage(chatId, "⚠️ Этот код уже был использован.");
             } else {
-                 // Link account
                  const { error: updateError } = await supabase
                    .from('user_telegram_settings')
                    .update({
@@ -72,14 +90,13 @@ Deno.serve(async (req) => {
                    .eq('connection_code', connectionCode);
 
                  if (updateError) {
-                   await sendMessage(chatId, "❌ Ошибка при привязке. Попробуйте позже.");
+                   await sendMessage(chatId, "❌ Ошибка при привязке в БД. Попробуйте позже.");
                  } else {
-                   await sendMessage(chatId, `✅ <b>Успешно!</b> Аккаунт @${username} привязан к YieldMonitor.\n\nТеперь вы будете получать уведомления о резких изменениях APY.`);
+                   await sendMessage(chatId, `✅ <b>Успешно!</b> Аккаунт @${username} привязан.\n\nТеперь вы будете получать уведомления.`);
                  }
             }
           }
         } else {
-          // Check if already linked
           const { data: alreadyLinked } = await supabase
             .from('user_telegram_settings')
             .select('*')
@@ -87,23 +104,25 @@ Deno.serve(async (req) => {
             .single();
             
           if (alreadyLinked) {
-            await sendMessage(chatId, `👋 С возвращением, ${username}!\nВаш аккаунт уже привязан к YieldMonitor. Вы получаете уведомления.\n\nОтправить /stop, чтобы приостановить уведомления.`);
+            await sendMessage(chatId, `👋 С возвращением, ${username}!\nВаш аккаунт уже привязан к YieldMonitor.`);
           } else {
-             await sendMessage(chatId, "Привет! Я бот YieldMonitor 📊\n\nЧтобы получать уведомления об APY, перейдите на сайт YieldMonitor, сгенерируйте код в настройках и нажмите на ссылку.");
+             await sendMessage(chatId, "Привет! Я бот YieldMonitor 📊\nДля получения уведомлений сгенерируйте код в настройках на сайте.");
           }
         }
       } else if (text === '/stop') {
+         console.log(`[Webhook] Stop notifications for ${chatId}`);
          const { error } = await supabase
            .from('user_telegram_settings')
            .update({ is_active: false })
            .eq('telegram_chat_id', chatId);
-           
+            
          if (error) {
-           await sendMessage(chatId, "❌ Произошла ошибка.");
+           await sendMessage(chatId, "❌ Ошибка при изменении настроек.");
          } else {
-           await sendMessage(chatId, "🛑 Уведомления приостановлены. Отправьте любой /start код с сайта, чтобы возобновить.");
+           await sendMessage(chatId, "🛑 Уведомления приостановлены.");
          }
       } else if (text === '/status') {
+          console.log(`[Webhook] Status request for ${chatId}`);
           const { data: settings } = await supabase
              .from('user_telegram_settings')
              .select('*')
@@ -120,19 +139,19 @@ Deno.serve(async (req) => {
                `⚙️ <b>Настройки:</b>\n` +
                `▫️ Порог Implied: <b>${settings.implied_apy_threshold_percent}%</b>\n` +
                `▫️ Платформы: <code>${platforms}</code>\n\n` +
-               `Введите /help для списка всех команд.`);
+               `Используйте /help для списка всех команд.`);
           } else {
-             await sendMessage(chatId, "⚠️ Ваш аккаунт не привязан к YieldMonitor.\nИспользуйте команду /start с кодом из личного кабинета.");
+             await sendMessage(chatId, "⚠️ Ваш аккаунт не привязан к YieldMonitor.");
           }
       } else if (text === '/help') {
+          console.log(`[Webhook] Help request for ${chatId}`);
           await sendMessage(chatId, `📖 <b>Доступные команды:</b>\n\n` +
-            `/status - Показать текущие настройки и состояние\n` +
-            `/update - Принудительно обновить данные прямо сейчас\n` +
-            `/stop - Приостановить получение уведомлений\n` +
-            `/start - Привязать аккаунт (нужен код)\n\n` +
-            `<i>Бот автоматически присылает уведомления при резких скачках доходности.</i>`);
+            `/status - Настройки и состояние\n` +
+            `/update - Принудительное обновление\n` +
+            `/stop - Приостановить уведомления\n` +
+            `/start - Привязать аккаунт (нужен код)`);
       } else if (text === '/update') {
-          // Check if user is linked
+          console.log(`[Webhook] Update trigger for ${chatId}`);
           const { data: user } = await supabase
             .from('user_telegram_settings')
             .select('*')
@@ -153,8 +172,8 @@ Deno.serve(async (req) => {
                 'fetch-ratex-markets'
               ];
 
-              // Trigger all updates in parallel
               const results = await Promise.all(functions.map(async (fn) => {
+                console.log(`[Webhook] Triggering ${fn}...`);
                 const res = await fetch(`${SUPABASE_URL}/functions/v1/${fn}`, {
                   method: 'POST',
                   headers: {
@@ -162,29 +181,32 @@ Deno.serve(async (req) => {
                     'Content-Type': 'application/json'
                   }
                 });
+                console.log(`[Webhook] ${fn} response: ${res.status} ${res.statusText}`);
                 return { name: fn, ok: res.ok };
               }));
 
               const failed = results.filter(r => !r.ok).map(r => r.name);
               if (failed.length > 0) {
-                console.error('Some updates failed:', failed);
                 await sendMessage(chatId, `⚠️ Обновление завершено с ошибками в ${failed.length} модулях. Но основные данные были успешно обработаны.`);
               } else {
                 await sendMessage(chatId, "✅ <b>Обновление успешно завершено!</b>\nВсе платформы синхронизированы.");
               }
             } catch (e) {
-              console.error('Update trigger error:', e);
+              console.error('[Webhook] Update trigger error:', e);
               await sendMessage(chatId, "❌ Произошла ошибка при запуске обновления.");
             }
           }
       } else {
-          await sendMessage(chatId, `❓ <b>Неизвестная команда.</b>\n\nЯ понимаю основные команды управления. Введите /help, чтобы увидеть список всех команд.`);
+          console.log(`[Webhook] Unknown command "${text}" from ${chatId}`);
+          await sendMessage(chatId, `❓ <b>Неизвестная команда.</b>\n\nДля списка команд введите /help.`);
       }
+    } else {
+      console.log(`[Webhook] No message or text in update`);
     }
 
     return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } catch (err) {
-    console.error(err)
+    console.error(`[Webhook] Critical error:`, err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }), { 
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

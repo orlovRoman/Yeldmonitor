@@ -39,7 +39,7 @@ const SUPPORTED_CHAINS = [
 const CHAIN_SLUGS: Record<number, string> = {
   1: 'ethereum',
   42161: 'arbitrum',
-  56: 'bsc',
+  56: 'bnbchain',
   10: 'optimism',
   5000: 'mantle',
   8453: 'base',
@@ -116,6 +116,8 @@ Deno.serve(async (req) => {
       pool_name: string;
       chain_name: string;
       chain_id: number;
+      market_address: string;
+      underlying_symbol: string;
     }[] = [];
 
     // Fetch markets from all chains
@@ -225,7 +227,9 @@ Deno.serve(async (req) => {
             change_percent: 0,
             pool_name: market.name,
             chain_name: market.chainName,
-            chain_id: market.chainId
+            chain_id: market.chainId,
+            market_address: market.address,
+            underlying_symbol: market.underlyingAsset?.symbol || '?'
           });
         }
 
@@ -246,7 +250,9 @@ Deno.serve(async (req) => {
                 change_percent: impliedChange * 100, // Keep sign for direction
                 pool_name: market.name,
                 chain_name: market.chainName,
-                chain_id: market.chainId
+                chain_id: market.chainId,
+                market_address: market.address,
+                underlying_symbol: market.underlyingAsset?.symbol || '?'
               });
             }
           }
@@ -263,7 +269,9 @@ Deno.serve(async (req) => {
                 change_percent: underlyingChange * 100, // Keep sign for direction
                 pool_name: market.name,
                 chain_name: market.chainName,
-                chain_id: market.chainId
+                chain_id: market.chainId,
+                market_address: market.address,
+                underlying_symbol: market.underlyingAsset?.symbol || '?'
               });
             }
           }
@@ -290,6 +298,9 @@ Deno.serve(async (req) => {
               change_percent: ((underlyingApy - impliedApy) / impliedApy) * 100,
               pool_name: market.name,
               chain_name: market.chainName,
+              chain_id: market.chainId,
+              market_address: market.address,
+              underlying_symbol: market.underlyingAsset?.symbol || '?'
             });
           }
         }
@@ -333,18 +344,26 @@ Deno.serve(async (req) => {
              const prev = (alert.previous_value * 100).toFixed(2);
              const curr = (alert.current_value * 100).toFixed(2);
              const chainSlug = CHAIN_SLUGS[alert.chain_id] || 'ethereum';
-             const url = `https://app.pendle.finance/trade/markets/${alert.pool_id}?chain=${chainSlug}`;
-             const linkName = `<a href="${url}">${alert.pool_name}</a>`;
+             const url = `https://app.pendle.finance/trade/markets/${alert.market_address}?chain=${chainSlug}`;
+             const linkName = `<a href="${url}">${alert.underlying_symbol}</a>`;
+             const marketName = alert.pool_name.replace('PT ', '');
 
              if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
-                 message += `🔸 <b>${linkName}</b> (${alert.chain_name})\nImplied APY: ${prev}% ➡️ ${curr}%\n\n`;
+                 const isIncrease = alert.change_percent > 0;
+                 const notifyImpliedIncrease = user.notify_implied_increase !== false; // true по умолчанию
+                 
+                 if (isIncrease && !notifyImpliedIncrease) {
+                     // Пользователь отключил уведомления о росте Implied APY
+                     continue;
+                 }
+                 
+                 message += `🔸 <b>${linkName}</b> (${marketName} @ ${alert.chain_name})\nImplied APY: ${prev}% ➡️ ${curr}%\n\n`;
                  hasAlertToSend = true;
              } else if (alert.alert_type === 'underlying_spike' && Math.abs(alert.change_percent) >= Number(user.underlying_apy_threshold_percent)) {
                  message += `🔹 <b>${linkName}</b> (${alert.chain_name})\nUnderlying APY: ${prev}% ➡️ ${curr}%\n\n`;
                  hasAlertToSend = true;
              } else if (alert.alert_type === 'yield_divergence') {
                  message += `⚠️ <b>Разрыв доходности: ${linkName}</b> (${alert.chain_name})\nUnderlying (${curr}%) сильно превышает Implied (${prev}%)\n\n`;
-                 hasAlertToSend = true;
              } else if (alert.alert_type === 'new_market') {
                  message += `💠 <b>Новый пул на Pendle:</b>\n${linkName} (${alert.chain_name})\nНачальный Implied APY: ${curr}%\n\n`;
                  hasAlertToSend = true;

@@ -208,6 +208,8 @@ Deno.serve(async (req) => {
       pool_name?: string;
       chain_name?: string;
       chain_id?: number;
+      real_address?: string;
+      underlying_symbol?: string;
     }[] = [];
     let inserted = 0, alertsCreated = 0;
 
@@ -319,7 +321,9 @@ Deno.serve(async (req) => {
                 previous_value: prevImplied, current_value: impliedApy,
                 change_percent: change * 100,
                 pool_name: tokenName,
-                chain_name: chainName
+                chain_name: chainName,
+                real_address: pool.address,
+                underlying_symbol: tokenName
               });
             }
           }
@@ -365,13 +369,21 @@ Deno.serve(async (req) => {
              const curr = (alert.current_value * 100).toFixed(2);
              const poolName = alert.pool_name || "Unknown Pool";
              const chainName = alert.chain_name || "Unknown Chain";
-             const chainSlug = SPECTRA_CHAIN_SLUGS[alert.chain_id || 1] || 'eth';
-             const url = `https://app.spectra.finance/trade-yield?network=${chainSlug}`;
-             const linkName = `<a href="${url}">${poolName}</a>`;
+              const chainSlug = SPECTRA_CHAIN_SLUGS[alert.chain_id || 1] || 'eth';
+              const url = `https://app.spectra.finance/trade-yield/${alert.real_address}?network=${chainSlug}`;
+              const linkName = `<a href="${url}">${alert.underlying_symbol}</a>`;
 
-             if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
-                 message += `🔸 <b>${linkName}</b> (${chainName})\nImplied APY: ${prev}% ➡️ ${curr}%\n\n`;
-                 hasAlertToSend = true;
+              if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
+                  const isIncrease = alert.change_percent > 0;
+                  const notifyImpliedIncrease = user.notify_implied_increase !== false; // true по умолчанию
+                  
+                  if (isIncrease && !notifyImpliedIncrease) {
+                      // Пользователь отключил уведомления о росте Implied APY
+                      continue;
+                  }
+                  
+                  message += `🔸 <b>${linkName}</b> (${alert.pool_name} @ ${chainName})\nImplied APY: ${prev}% ➡️ ${curr}%\n\n`;
+                  hasAlertToSend = true;
              } else if (alert.alert_type === 'new_market') {
                  message += `💠 <b>Новый пул на Spectra:</b>\n${linkName} (${chainName})\nНачальный Implied APY: ${curr}%\n\n`;
                  hasAlertToSend = true;
