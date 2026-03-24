@@ -132,13 +132,16 @@ Deno.serve(async (req) => {
           if (settings) {
              const status = settings.is_active ? "🔔 <b>Активны</b>" : "🛑 <b>Приостановлены</b>";
              const platforms = settings.platforms && settings.platforms.length > 0 ? settings.platforms.join(', ') : "Все";
+             const interval = settings.notification_interval_minutes ?? 60;
+             const intervalLabel = interval < 60 ? `${interval} мин` : interval === 60 ? '1 час' : interval === 190 ? '190 мин' : interval === 360 ? '6 часов' : `${interval} мин`;
              
              await sendMessage(chatId, `📊 <b>Ваш профиль YieldMonitor</b>\n\n` +
                `👤 Юзер: <code>${username}</code>\n` +
                `Уведомления: ${status}\n\n` +
                `⚙️ <b>Настройки:</b>\n` +
                `▫️ Порог Implied: <b>${settings.implied_apy_threshold_percent}%</b>\n` +
-               `▫️ Платформы: <code>${platforms}</code>\n\n` +
+               `▫️ Платформы: <code>${platforms}</code>\n` +
+               `▫️ Интервал: <b>${intervalLabel}</b>\n\n` +
                `Используйте /help для списка всех команд.`);
           } else {
              await sendMessage(chatId, "⚠️ Ваш аккаунт не привязан к YieldMonitor.");
@@ -148,8 +151,54 @@ Deno.serve(async (req) => {
           await sendMessage(chatId, `📖 <b>Доступные команды:</b>\n\n` +
             `/status - Настройки и состояние\n` +
             `/update - Принудительное обновление\n` +
+            `/interval - Настроить интервал уведомлений\n` +
             `/stop - Приостановить уведомления\n` +
             `/start - Привязать аккаунт (нужен код)`);
+      } else if (text === '/interval' || text.startsWith('/interval ')) {
+          console.log(`[Webhook] Interval command from ${chatId}`);
+          const { data: user } = await supabase
+            .from('user_telegram_settings')
+            .select('*')
+            .eq('telegram_chat_id', chatId)
+            .single();
+
+          if (!user) {
+            await sendMessage(chatId, "❌ Сначала привяжите аккаунт через /start.");
+          } else {
+            const parts = text.split(' ');
+            if (parts.length > 1) {
+              // e.g. /interval 190
+              const minutes = parseInt(parts[1], 10);
+              if (isNaN(minutes) || minutes < 10) {
+                await sendMessage(chatId, "❌ Минимальный интервал — 10 минут. Пример: <code>/interval 60</code>");
+              } else {
+                const { error } = await supabase
+                  .from('user_telegram_settings')
+                  .update({ notification_interval_minutes: minutes })
+                  .eq('telegram_chat_id', chatId);
+
+                if (error) {
+                  await sendMessage(chatId, "❌ Ошибка при сохранении.");
+                } else {
+                  const label = minutes < 60 ? `${minutes} мин` : minutes === 60 ? '1 час' : minutes === 360 ? '6 часов' : `${minutes} мин`;
+                  await sendMessage(chatId, `✅ Интервал уведомлений установлен: <b>${label}</b>.`);
+                }
+              }
+            } else {
+              // Show presets
+              const current = user.notification_interval_minutes ?? 60;
+              const currentLabel = current < 60 ? `${current} мин` : current === 60 ? '1 час' : current === 190 ? '190 мин' : current === 360 ? '6 часов' : `${current} мин`;
+              await sendMessage(chatId,
+                `⏱ <b>Интервал уведомлений</b>\n` +
+                `Текущий: <b>${currentLabel}</b>\n\n` +
+                `Выберите или напишите команду с нужным числом минут:\n` +
+                `• /interval 10  — каждые 10 мин\n` +
+                `• /interval 60  — каждый час\n` +
+                `• /interval 190 — каждые 190 мин\n` +
+                `• /interval 360 — каждые 6 часов\n\n` +
+                `<i>Минимум: 10 минут.</i>`);
+            }
+          }
       } else if (text === '/update') {
           console.log(`[Webhook] Update trigger for ${chatId}`);
           const { data: user } = await supabase

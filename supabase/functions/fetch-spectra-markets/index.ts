@@ -6,20 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-async function notifyTelegram(chatId: number, message: string) {
-  const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
-  if (!TELEGRAM_BOT_TOKEN) return;
-  
-  try {
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' }),
-    });
-  } catch (e) {
-    console.error('Telegram send error:', e);
-  }
-}
+
 
 const IMPLIED_APY_THRESHOLD = 0.01;
 const ALERT_COOLDOWN_HOURS = 24;
@@ -253,6 +240,7 @@ Deno.serve(async (req) => {
           name: `[Spectra] ${tokenName}`,
           underlying_asset: tokenName,
           expiry: expiryDate,
+          platform: 'Spectra',
           updated_at: new Date().toISOString(),
         }, { onConflict: 'chain_id,market_address' });
 
@@ -347,60 +335,13 @@ Deno.serve(async (req) => {
           previous_value: alert.previous_value,
           current_value: alert.current_value,
           change_percent: alert.change_percent,
+          platform: 'Spectra',
+          pool_name: alert.pool_name,
       });
       if (!error) alertsCreated++;
     }
 
-    // Send Telegram notifications
-    if (alerts.length > 0) {
-      const { data: users } = await supabase
-        .from('user_telegram_settings')
-        .select('*')
-        .eq('is_active', true);
-        
-      if (users && users.length > 0) {
-        for (const user of users) {
-          if (user.platforms && !user.platforms.includes('Spectra')) continue;
-          
-          let message = `🚨 <b>YieldMonitor: Изменения на Spectra</b>\n\n`;
-          let hasAlertToSend = false;
 
-          for (const alert of alerts) {
-             const prev = (alert.previous_value * 100).toFixed(2);
-             const curr = (alert.current_value * 100).toFixed(2);
-             const poolName = alert.pool_name || "Unknown Pool";
-             const chainName = alert.chain_name || "Unknown Chain";
-              const chainSlug = SPECTRA_CHAIN_SLUGS[alert.chain_id || 1] || 'eth';
-              const url = `https://app.spectra.finance/trade-yield/${alert.real_address}?network=${chainSlug}`;
-              const linkName = `<a href="${url}">${alert.underlying_symbol}</a>`;
-
-             if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
-                  const underlyingValue = ((alert.underlying_apy || 0) * 100).toFixed(2);
-                  
-                  const isIncrease = alert.change_percent > 0;
-                  const notifyImpliedIncrease = user.notify_implied_increase !== false; // true по умолчанию
-                  
-                  if (isIncrease && !notifyImpliedIncrease) {
-                      // Пользователь отключил уведомления о росте Implied APY
-                      continue;
-                  }
-                  
-                  message += `🔸 <b>${linkName}</b> (${alert.pool_name} @ ${chainName})\n`;
-                  message += `Implied APY: ${prev}% ➡️ ${curr}%\n`;
-                  message += `Underlying APY: ${underlyingValue}%\n\n`;
-                  hasAlertToSend = true;
-             } else if (alert.alert_type === 'new_market') {
-                 message += `💠 <b>Новый пул на Spectra:</b>\n${linkName} (${chainName})\nНачальный Implied APY: ${curr}%\n\n`;
-                 hasAlertToSend = true;
-             }
-          }
-
-          if (hasAlertToSend && user.telegram_chat_id) {
-             await notifyTelegram(user.telegram_chat_id, message);
-          }
-        }
-      }
-    }
 
     console.log(`[Spectra] Готово: ${inserted} пулов обновлено, ${alertsCreated} алертов создано`);
 

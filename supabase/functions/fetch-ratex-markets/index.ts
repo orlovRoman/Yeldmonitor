@@ -9,20 +9,7 @@ const corsHeaders = {
 
 const RATEX_API_URL = 'https://api.rate-x.io/';
 
-async function notifyTelegram(chatId: number, message: string) {
-  const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
-  if (!TELEGRAM_BOT_TOKEN) return;
-  
-  try {
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' }),
-    });
-  } catch (e) {
-    console.error('Telegram send error:', e);
-  }
-}
+
 
 // Threshold for price change alerts (20%)
 const PRICE_CHANGE_THRESHOLD = 0.20;
@@ -298,6 +285,7 @@ Deno.serve(async (req) => {
                         name: `[RateX] ${market.symbol_name || market.symbol}`,
                         underlying_asset: market.symbol_level1_category || null,
                         expiry: market.due_date || null,
+                        platform: 'RateX',
                         updated_at: new Date().toISOString(),
                     }, {
                         onConflict: 'chain_id,market_address'
@@ -437,6 +425,8 @@ Deno.serve(async (req) => {
                     previous_value: alert.previous_value,
                     current_value: alert.current_value,
                     change_percent: alert.change_percent,
+                    platform: 'RateX',
+                    pool_name: alert.pool_name,
                 });
 
             // Still insert into ratex_alerts for backward compatibility
@@ -451,53 +441,7 @@ Deno.serve(async (req) => {
                 }).catch(() => { });
         }
 
-        // Send Telegram notifications
-        if (alerts.length > 0) {
-          const { data: users } = await supabase
-            .from('user_telegram_settings')
-            .select('*')
-            .eq('is_active', true);
-            
-          if (users && users.length > 0) {
-            for (const user of users) {
-              if (user.platforms && !user.platforms.includes('RateX')) continue;
-              
-              let message = `🚨 <b>YieldMonitor: Изменения на RateX</b>\n\n`;
-              let hasAlertToSend = false;
 
-              for (const alert of alerts) {
-                 const prev = (alert.previous_value * 100).toFixed(2);
-                 const curr = (alert.current_value * 100).toFixed(2);
-                    const url = `https://app.rate-x.io/leverage?symbol=${alert.market_symbol}`;
-                    const linkName = `<a href="${url}">${alert.market_symbol}</a>`;
-
-                    if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
-                        const underlyingValue = ((alert.underlying_apy || 0) * 100).toFixed(2);
-                        
-                        const isIncrease = alert.change_percent > 0;
-                        const notifyImpliedIncrease = user.notify_implied_increase !== false; // true по умолчанию
-                        
-                        if (isIncrease && !notifyImpliedIncrease) {
-                            // Пользователь отключил уведомления о росте Implied APY
-                            continue;
-                        }
-                        
-                        message += `🔸 <b>${linkName}</b> (${alert.pool_name} @ Solana)\n`;
-                        message += `Implied APY: ${prev}% ➡️ ${curr}%\n`;
-                        message += `Underlying APY: ${underlyingValue}%\n\n`;
-                        hasAlertToSend = true;
-                   } else if (alert.alert_type === 'new_market') {
-                        message += `💠 <b>Новый пул на RateX:</b>\n${linkName} (Solana)\nНачальный Implied APY: ${curr}%\n\n`;
-                        hasAlertToSend = true;
-                   }
-              }
-
-              if (hasAlertToSend && user.telegram_chat_id) {
-                 await notifyTelegram(user.telegram_chat_id, message);
-              }
-            }
-          }
-        }
 
         return new Response(JSON.stringify({
             success: true,

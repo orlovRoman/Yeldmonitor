@@ -25,7 +25,15 @@ type UserSettings = {
   platforms: string[];
   is_active: boolean;
   notify_implied_increase: boolean;
+  notification_interval_minutes: number;
 };
+
+const INTERVAL_OPTIONS = [
+  { label: '10 мин', value: 10 },
+  { label: '1 час', value: 60 },
+  { label: '190 мин', value: 190 },
+  { label: '6 часов', value: 360 },
+];
 
 const PLATFORMS_LIST = ["Pendle", "Spectra", "Exponent", "RateX"];
 
@@ -82,6 +90,7 @@ export function TelegramSettingsDialog() {
         implied_apy_threshold_percent: 1.0,
         underlying_apy_threshold_percent: 1.0,
         platforms: PLATFORMS_LIST,
+        notification_interval_minutes: 60,
         is_active: true
       })
       .select()
@@ -210,7 +219,7 @@ export function TelegramSettingsDialog() {
               )}
             </div>
           ) : (
-            <div className="space-y-6 animate-in slide-in-from-bottom-2">
+            <div className="space-y-6 animate-in slide-in-from-bottom-2 max-h-[400px] overflow-y-auto pr-3 mr-[-8px]">
               <div className="flex items-center justify-between p-4 border rounded-xl bg-primary/5 border-primary/20">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
@@ -280,6 +289,35 @@ export function TelegramSettingsDialog() {
                        </label>
                     ))}
                   </div>
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  <Label className="flex flex-col gap-1">
+                    <span className="font-semibold">Интервал уведомлений</span>
+                    <span className="text-xs text-muted-foreground">Как часто приходят плановые сводки</span>
+                  </Label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {INTERVAL_OPTIONS.map(opt => {
+                      const isSelected = (settings.notification_interval_minutes ?? 60) === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => handleUpdateSettings({ notification_interval_minutes: opt.value })}
+                          className={`px-2 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                            isSelected
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'bg-muted/30 hover:bg-muted/60 border-border'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Минимум — 10 мин. Также доступно через бот: <code className="text-xs">/interval 190</code>
+                  </p>
                 </div>
               </div>
             </div>
