@@ -72,13 +72,19 @@ Deno.serve(async (req) => {
       // Fetch recent alerts for this user (platforms filter)
       const platforms: string[] = user.platforms ?? ['Pendle', 'Spectra', 'Exponent', 'RateX'];
 
-      const { data: recentAlerts } = await supabase
+      let recentAlertsQuery = supabase
         .from('pendle_alerts')
         .select('pool_name, alert_type, change_percent, current_value, created_at')
         .in('platform', platforms)
-        .eq('status', 'active')
+        .eq('status', 'new')
         .order('created_at', { ascending: false })
         .limit(5);
+
+      if (lastNotified) {
+        recentAlertsQuery = recentAlertsQuery.gt('created_at', lastNotified.toISOString());
+      }
+
+      const { data: recentAlerts } = await recentAlertsQuery;
 
       // Fetch top pools summary
       const { data: topPools } = await supabase
