@@ -48,10 +48,27 @@ Follow these steps to set up the project locally:
 - **Tailwind CSS**: Utility-first CSS framework for styling.
 - **Supabase**: Backend-as-a-service for database and edge functions.
 
-## Deployment
+## Live Dashboard
 
-The project is configured for deployment on Vercel. Push your changes to the `main` branch to trigger an automatic deployment.
+The production version of the service is running at: **[https://yeldmonitor.vercel.app/](https://yeldmonitor.vercel.app/)**
 
+## Deployment Guide
+
+The project consists of two separate environments (Frontend and Backend). Как деплоить (загружать) изменения зависит от того, **что именно** вы поменяли:
+
+### 1. Изменения интерфейса (Frontend / React / Сайт)
+Если вы меняли кнопки, дизайн, окна настроек или что-либо внутри папки `src/`:
+- **ДА, вам необходимо сделать `git push` на GitHub.**
+- Сервис Vercel автоматически "слушает" ваш репозиторий на GitHub. Как только вы пушите изменения в ветку `main`, Vercel сам собирает проект и выкатывает его на `yeldmonitor.vercel.app` (занимает 1-2 минуты).
+
+### 2. Изменения Telegram-бота и парсеров (Backend / Supabase)
+Если вы меняли логику рассылок, скрипты парсинга или что-либо внутри папки `supabase/functions/`:
+- **НЕТ, пуш на GitHub НЕ обновит логику бота.** (Коммит на GitHub нужен только для сохранения копии кода).
+- Чтобы изменения вступили в силу, вам нужно отправить их напрямую на серверы Supabase с помощью консольной команды:
+  ```sh
+  npx supabase functions deploy <имя-скрипта>
+  ```
+  *(Например: `npx supabase functions deploy send-scheduled-notifications`)*
 ## Contributing
 
 1. Fork the project.
