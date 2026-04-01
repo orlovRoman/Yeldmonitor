@@ -13,8 +13,8 @@ const RATEX_API_URL = 'https://api.rate-x.io/';
 
 // Threshold for price change alerts (20%)
 const PRICE_CHANGE_THRESHOLD = 0.20;
-// Threshold for APY change alerts (10% relative)
-const APY_CHANGE_THRESHOLD = 0.10;
+// Threshold for APY change alerts (5% relative) — lowered from 10% to be more sensitive
+const APY_CHANGE_THRESHOLD = 0.05;
 const RATEX_CHAIN_ID = 502; // Custom ID for RateX/Solana in this app
 
 interface RateXSymbol {
@@ -79,7 +79,7 @@ function generateCid(): string {
 }
 
 // Call RateX API
-async function callRateXApi<T>(method: string, content: Record<string, unknown> = {}, serverName: 'AdminSvr' | 'MDSvr' = 'AdminSvr'): Promise<RateXApiResponse<T>> {
+async function callRateXApi<T>(method: string, content: Record<string, unknown> = {}, serverName: 'AdminSvr' | 'MDSvr' | 'APSSvr' = 'AdminSvr'): Promise<RateXApiResponse<T>> {
     const cid = generateCid();
     const payload = {
         serverName,
@@ -198,15 +198,36 @@ Deno.serve(async (req) => {
             console.error('Failed to fetch APY stats:', err);
         }
 
-        // 2.6 Fetch underlying APY from queryBaseApy (returns % values, e.g. "6.02" = 6.02%)
+        // 2.6a Fetch underlying APY via dc.aps.referenceprice (primary - most accurate, 7D period)
+        let refPriceMap: Record<string, number> = {};
+        try {
+            const refPriceResponse = await callRateXApi<Record<string, any>>('dc.aps.referenceprice', {}, 'APSSvr');
+            if (refPriceResponse.data && typeof refPriceResponse.data === 'object') {
+                for (const [category, periods] of Object.entries(refPriceResponse.data)) {
+                    const p = periods as Record<string, string>;
+                    // Prefer 7D period, fallback to 1M, 1Y, ON
+                    const val = parseFloat(p['7D'] ?? p['1M'] ?? p['1Y'] ?? p['ON'] ?? '0');
+                    if (!isNaN(val) && val > 0) {
+                        refPriceMap[category.toUpperCase()] = val; // Already decimal (0.08 = 8%)
+                        refPriceMap[category] = val; // Also keep original case
+                    }
+                }
+            }
+            console.log(`Fetched referenceprice for ${Object.keys(refPriceMap).length / 2} categories`);
+        } catch (err) {
+            console.error('Failed to fetch dc.aps.referenceprice:', err);
+        }
+
+        // 2.6b Fetch underlying APY from queryBaseApy (fallback - per-symbol)
         let baseApyMap: Record<string, number> = {};
         try {
             const baseApyResponse = await callRateXApi<Record<string, string>>('queryBaseApy');
             if (baseApyResponse.data && typeof baseApyResponse.data === 'object') {
                 for (const [symbol, value] of Object.entries(baseApyResponse.data)) {
                     const parsed = parseFloat(value as string);
+                    // queryBaseApy returns PERCENTAGE values (e.g. 15.098 = 15.098%) — divide by 100 to get decimal
                     if (!isNaN(parsed) && parsed > 0) {
-                        baseApyMap[symbol] = parsed / 100; // Convert % to decimal (6.02% -> 0.0602)
+                        baseApyMap[symbol] = parsed / 100; // 15.098 → 0.15098
                     }
                 }
             }
@@ -217,6 +238,7 @@ Deno.serve(async (req) => {
 
         // 2.7 Fetch live yield data from MDSvr (queryTrade)
         let liveYieldMap: Record<string, number> = {};
+        let liveYieldEntry: Record<string, any> = {};
         try {
             console.log('[RateX] Fetching live yields from MDSvr (queryTrade)...');
             const liveYieldResponse = await callRateXApi<any[]>('queryTrade', {}, 'MDSvr');
@@ -224,6 +246,7 @@ Deno.serve(async (req) => {
                 for (const trade of liveYieldResponse.data) {
                     if (trade.SecurityID && trade.Yield !== undefined) {
                         liveYieldMap[trade.SecurityID] = parseFloat(trade.Yield);
+                        liveYieldEntry[trade.SecurityID] = trade; // Keep full entry for MarkPrice etc.
                     }
                 }
             }
@@ -257,23 +280,15 @@ Deno.serve(async (req) => {
         // 4. Process each active market
         for (const market of activeMarkets) {
             try {
-                // === COMPUTE IMPLIED YIELD FROM sum_price + due_date ===
-                // Matches rate-x.io formula: implied_yield = sum_price * (365 / days_to_expiry)
-                let scrapedImpliedYield: number | null = null;
-                const sumPrice = market.sum_price || 0;
-                if (sumPrice > 0 && market.due_date) {
-                    try {
-                        const dateStr = market.due_date.replace(' 24:00:00', ' 23:59:59');
-                        const dueDate = new Date(dateStr);
-                        const daysToExpiry = (dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-                        if (daysToExpiry > 0) {
-                            scrapedImpliedYield = sumPrice * (365 / daysToExpiry);
-                            console.log(`[RateX] ${market.symbol}: sum_price=${sumPrice}, days=${daysToExpiry.toFixed(1)}, implied=${(scrapedImpliedYield * 100).toFixed(3)}%`);
-                        }
-                    } catch (e) {
-                        console.warn(`[RateX] Failed to compute yield for ${market.symbol}:`, e);
-                    }
-                }
+                // === COMPUTE IMPLIED YIELD FROM MDSvr.queryTrade (primary) ===
+                // sum_price from querySymbol is often 0; MDSvr is the authoritative source.
+
+                // === MarkPrice → Yield Exposure ===
+                const tradeEntry = liveYieldMap[market.symbol] !== undefined
+                    ? liveYieldEntry[market.symbol]
+                    : null;
+                const markPrice = tradeEntry ? parseFloat(tradeEntry.MarkPrice || '0') : 0;
+                const yieldExposure = markPrice > 0 ? 1 / markPrice : 0;
 
                 // Upsert pool into main pendle_pools table for dashboard unification
                 const marketAddress = `ratex-${market.symbol}`;
@@ -306,19 +321,19 @@ Deno.serve(async (req) => {
                 const tvlStat = symbolStats.find(s => s.tvl && parseFloat(s.tvl) > 0) || symbolStats[0];
                 const liquidityFromStats = tvlStat && tvlStat.tvl ? parseFloat(tvlStat.tvl) : 0;
 
-                // Use live yield from MDSvr if available, otherwise fallback to API range (scrapedImpliedYield via sum_price)
-                let currentImpliedApy = liveYieldMap[market.symbol] || scrapedImpliedYield;
-                
-                // Final fallback to initial range (WITHOUT division by 100, as API value is already decimal-like or %, let's be safe)
-                if (currentImpliedApy === null || currentImpliedApy === 0) {
+                // MDSvr.queryTrade is the primary source for implied yield (Yield field = decimal, 0.17563 = 17.563%)
+                let currentImpliedApy = liveYieldMap[market.symbol] || 0;
+                // Fallback to initial_upper_yield_range only if MDSvr has no data
+                if (currentImpliedApy === 0) {
                     currentImpliedApy = market.initial_upper_yield_range || 0;
-                    // If the value is like 0.5, it is 50%. If it's like 50, it is 50%.
-                    // Looking at querySymbol: initial_upper_yield_range is 0.5 for BNSOL (30%). 
-                    // Wait, 0.3 for BNSOL (30%?). Yes. So 0.5 = 50%. No division needed.
                 }
 
-                // Use queryBaseApy for underlying yield (most accurate), fallback to initial_lower_yield_range
-                const currentUnderlyingApy = baseApyMap[market.symbol] || (market.initial_lower_yield_range || 0);
+                // Underlying APY: primary = dc.aps.referenceprice by category, fallback = queryBaseApy by symbol
+                const category = (market.symbol_level1_category || '').toUpperCase();
+                let currentUnderlyingApy = refPriceMap[category] ?? refPriceMap[market.symbol_level1_category] ?? 0;
+                if (currentUnderlyingApy === 0) {
+                    currentUnderlyingApy = baseApyMap[market.symbol] ?? (market.initial_lower_yield_range || 0);
+                }
 
                 // Sync with original ratex_pools for backwards compatibility if needed
                 await supabase
@@ -361,7 +376,18 @@ Deno.serve(async (req) => {
                         underlying_apy: currentUnderlyingApy,
                         liquidity: liquidityFromStats,
                         volume_24h: 0,
+                        // yield_exposure stored as extra_data if column exists
                     });
+
+                // Update yield_exposure in pendle_pools for leverage display
+                if (yieldExposure > 0) {
+                    await supabase
+                        .from('pendle_pools')
+                        .update({ yield_exposure: yieldExposure })
+                        .eq('chain_id', RATEX_CHAIN_ID)
+                        .eq('market_address', marketAddress)
+                        .catch(() => {}); // Ignore if column doesn't exist yet
+                }
 
                 // Backward compatibility rate history
                 await supabase
@@ -428,17 +454,6 @@ Deno.serve(async (req) => {
                     platform: 'RateX',
                     pool_name: alert.pool_name,
                 });
-
-            // Still insert into ratex_alerts for backward compatibility
-            await supabase
-                .from('ratex_alerts')
-                .insert({
-                    pool_id: alert.pool_id, // Error prone as mentioned above, but kept as best effort
-                    alert_type: alert.alert_type,
-                    previous_value: alert.previous_value,
-                    current_value: alert.current_value,
-                    change_percent: alert.change_percent,
-                }).catch(() => { });
         }
 
 

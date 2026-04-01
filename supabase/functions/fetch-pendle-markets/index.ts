@@ -126,30 +126,47 @@ Deno.serve(async (req) => {
       try {
         console.log(`Fetching markets for ${chain.name} (chainId: ${chain.chainId})...`);
 
-        const response = await fetch(
-          `https://api-v2.pendle.finance/core/v1/${chain.chainId}/markets?order_by=name%3A1&skip=0&limit=100`,
-          {
-            headers: { 'Accept': 'application/json' }
+        let skip = 0;
+        const limit = 100;
+        let hasMore = true;
+
+        while (hasMore) {
+          const response = await fetch(
+            `https://api-v2.pendle.finance/core/v1/${chain.chainId}/markets?order_by=name%3A1&skip=${skip}&limit=${limit}`,
+            {
+              headers: { 'Accept': 'application/json' }
+            }
+          );
+
+          if (!response.ok) {
+            console.error(`Failed to fetch ${chain.name} (skip: ${skip}): ${response.status}`);
+            break;
           }
-        );
 
-        if (!response.ok) {
-          console.error(`Failed to fetch ${chain.name}: ${response.status}`);
-          continue;
+          const data = await response.json();
+          const markets = data.results || data || [];
+
+          if (markets.length === 0) {
+            hasMore = false;
+            break;
+          }
+
+          for (const market of markets) {
+            allMarkets.push({
+              chainId: chain.chainId,
+              chainName: chain.name,
+              ...market
+            });
+          }
+
+          if (markets.length < limit) {
+            hasMore = false;
+          } else {
+            skip += limit;
+          }
         }
-
-        const data = await response.json();
-        const markets = data.results || data || [];
-
-        console.log(`Found ${markets.length} markets on ${chain.name}`);
-
-        for (const market of markets) {
-          allMarkets.push({
-            chainId: chain.chainId,
-            chainName: chain.name,
-            ...market
-          });
-        }
+        
+        console.log(`Finished fetching ${chain.name}, got total markets.`);
       } catch (error) {
         console.error(`Error fetching ${chain.name}:`, error);
       }
@@ -327,6 +344,8 @@ Deno.serve(async (req) => {
           previous_value: alert.previous_value,
           current_value: alert.current_value,
           change_percent: alert.change_percent,
+          platform: 'Pendle',
+          pool_name: alert.pool_name,
         });
     }
 

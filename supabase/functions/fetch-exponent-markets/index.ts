@@ -331,6 +331,8 @@ Deno.serve(async (req) => {
           previous_value: alert.previous_value,
           current_value: alert.current_value,
           change_percent: alert.change_percent,
+          platform: 'Exponent',
+          pool_name: alert.pool_name || alert.underlying_symbol || 'Unknown',
         });
     }
 
