@@ -29,6 +29,12 @@ function formatInterval(minutes: number): string {
   return `${Math.round(minutes / 60)} ч`;
 }
 
+const CHAIN_NAMES: Record<number, string> = {
+  1: 'Ethereum', 42161: 'Arbitrum', 56: 'BNB Chain', 10: 'Optimism',
+  5000: 'Mantle', 8453: 'Base', 146: 'Sonic', 999: 'Hyperliquid',
+  21000000: 'Corn', 80094: 'Berachain', 0: 'Solana'
+};
+
 // Check if a column exists in a table by trying to select it
 async function columnExists(table: string, column: string): Promise<boolean> {
   const { error } = await supabase.from(table).select(column).limit(1);
@@ -87,7 +93,7 @@ Deno.serve(async (req) => {
       try {
         let alertsQuery = supabase
           .from('pendle_alerts')
-          .select('pool_name, alert_type, change_percent, current_value, platform, created_at')
+          .select('pool_name, alert_type, change_percent, current_value, platform, created_at, pendle_pools(chain_id, expiry, underlying_asset, name)')
           .eq('status', 'new')
           .order('created_at', { ascending: false })
           .limit(5);
@@ -114,7 +120,7 @@ Deno.serve(async (req) => {
         // Get pools with latest rate from history
         const { data: pools } = await supabase
           .from('pendle_pools')
-          .select(`id, name, ${poolsHasPlatform ? 'platform,' : ''} pendle_rates_history!inner(implied_apy, recorded_at)`)
+          .select(`id, name, chain_id, expiry, underlying_asset, ${poolsHasPlatform ? 'platform,' : ''} pendle_rates_history!inner(implied_apy, recorded_at)`)
           .order('pendle_rates_history.recorded_at', { ascending: false })
           .limit(20);
 
@@ -131,7 +137,14 @@ Deno.serve(async (req) => {
             );
             const hist = Array.isArray(p.pendle_rates_history) ? p.pendle_rates_history[0] : (p.pendle_rates_history as any);
             if (platforms.includes(pl) && hist?.implied_apy > 0) {
-              topPools.push({ name: p.name, platform: pl, implied_apy: hist.implied_apy });
+              topPools.push({ 
+                name: p.name, 
+                platform: pl, 
+                implied_apy: hist.implied_apy,
+                chain_id: p.chain_id,
+                expiry: p.expiry,
+                underlying_asset: p.underlying_asset
+              });
             }
           }
           topPools.sort((a, b) => b.implied_apy - a.implied_apy);
@@ -152,8 +165,26 @@ Deno.serve(async (req) => {
           const sign = alert.change_percent >= 0 ? '▲' : '▼';
           const pct = Math.abs(Number(alert.change_percent)).toFixed(2);
           const apy = (Number(alert.current_value) * 100).toFixed(2);
-          const poolLabel = alert.pool_name || 'Unknown';
-          text += `${sign} ${poolLabel}: <b>${apy}%</b> (${sign}${pct}%)\n`;
+          
+          let platformClean = alert.platform || 'Yield';
+          let chainName = alert.pendle_pools?.chain_id ? (CHAIN_NAMES[alert.pendle_pools.chain_id] || '') : (platformClean === 'RateX' ? 'Solana' : '');
+          let platformStr = chainName ? `[${platformClean} | ${chainName}]` : `[${platformClean}]`;
+          
+          let assetName = alert.pendle_pools?.underlying_asset || alert.pendle_pools?.name || alert.pool_name || '';
+          assetName = assetName.replace(/\[.*?\]\s*/g, '').replace(/^PT\s+/i, '');
+          if (assetName === 'PENDLE-LPT' || assetName.toLowerCase() === 'unknown' || assetName === 'Pool' || assetName === '') {
+             assetName = alert.pendle_pools?.name ? alert.pendle_pools.name.replace(/\[.*?\]\s*/g, '').replace(/^PT\s+/i, '') : 'Pool';
+             // If still bad, fallback
+             if (assetName === 'PENDLE-LPT' || assetName.toLowerCase() === 'unknown') assetName = `Asset ${alert.pool_name?.substring(0,4) || ''}`;
+          }
+          
+          let expiryStr = '';
+          if (alert.pendle_pools?.expiry) {
+            const expDate = new Date(alert.pendle_pools.expiry);
+            expiryStr = ` (до ${expDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })})`;
+          }
+          
+          text += `${sign} ${platformStr} <b>${assetName}</b>${expiryStr}: <b>${apy}%</b> (${sign}${pct}%)\n`;
         }
         text += '\n';
       } else {
@@ -164,8 +195,21 @@ Deno.serve(async (req) => {
         text += `🏆 <b>Топ пулы по Implied APY:</b>\n`;
         for (const pool of topPools) {
           const implied = (Number(pool.implied_apy) * 100).toFixed(2);
-          const pl = pool.platform ? ` [${pool.platform}]` : '';
-          text += `• ${pool.name}${pl}: <b>${implied}%</b>\n`;
+          let platformClean = pool.platform || 'Yield';
+          let chainName = pool.chain_id ? (CHAIN_NAMES[pool.chain_id] || '') : (platformClean === 'RateX' ? 'Solana' : '');
+          let platformStr = chainName ? `[${platformClean} | ${chainName}]` : `[${platformClean}]`;
+          
+          let assetName = pool.underlying_asset || pool.name || '';
+          assetName = assetName.replace(/\[.*?\]\s*/g, '').replace(/^PT\s+/i, '');
+          if (assetName === 'PENDLE-LPT' || assetName.toLowerCase() === 'unknown') assetName = pool.name.replace(/\[.*?\]\s*/g, '').replace(/^PT\s+/i, '');
+          
+          let expiryStr = '';
+          if (pool.expiry) {
+            const expDate = new Date(pool.expiry);
+            expiryStr = ` (до ${expDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })})`;
+          }
+
+          text += `• ${platformStr} <b>${assetName}</b>${expiryStr}: <b>${implied}%</b>\n`;
         }
       }
 

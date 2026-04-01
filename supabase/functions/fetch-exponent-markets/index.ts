@@ -332,7 +332,7 @@ Deno.serve(async (req) => {
           current_value: alert.current_value,
           change_percent: alert.change_percent,
           platform: 'Exponent',
-          pool_name: alert.pool_name || alert.underlying_symbol || 'Unknown',
+          pool_name: alert.pool_name,
         });
     }
 
@@ -367,12 +367,12 @@ Deno.serve(async (req) => {
                             continue;
                         }
                         
-                        message += `🔸 <b>${linkName}</b> (${alert.pool_name} @ Solana)\n`;
+                        message += `🔸 <b>${linkName}</b> [Exponent | Solana]\n`;
                         message += `Implied APY: ${prev}% ➡️ ${curr}%\n`;
                         message += `Underlying APY: ${underlyingValue}%\n\n`;
                         hasAlertToSend = true;
               } else if (alert.alert_type === 'new_market') {
-                  message += `💠 <b>Новый пул на Exponent:</b>\n${linkName} (${poolName} @ Solana)\nНачальный Implied APY: ${curr}%\n\n`;
+                  message += `💠 <b>Новый пул на Exponent:</b>\n${linkName} [Exponent | Solana]\nНачальный Implied APY: ${curr}%\n\n`;
                   hasAlertToSend = true;
               }
           }

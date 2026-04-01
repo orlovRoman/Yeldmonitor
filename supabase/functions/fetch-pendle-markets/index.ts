@@ -185,13 +185,19 @@ Deno.serve(async (req) => {
     // Process each active market
     for (const market of activeMarkets) {
       try {
+        // Process market name correctly avoiding generic 'PENDLE-LPT'
+        let cleanName = market.name || '';
+        if (cleanName === 'PENDLE-LPT' || cleanName.toLowerCase() === 'unknown' || cleanName === '') {
+           cleanName = market.underlyingAsset?.symbol || 'Pool';
+        }
+
         // Upsert pool
         const { data: poolData, error: poolError } = await supabase
           .from('pendle_pools')
           .upsert({
             chain_id: market.chainId,
             market_address: market.address,
-            name: market.name || `${market.underlyingAsset?.symbol || 'Unknown'} Pool`,
+            name: cleanName,
             underlying_asset: market.underlyingAsset?.symbol || null,
             pt_address: market.pt?.address || null,
             yt_address: market.yt?.address || null,
@@ -243,7 +249,7 @@ Deno.serve(async (req) => {
             previous_value: 0,
             current_value: impliedApy,
             change_percent: 0,
-            pool_name: market.name,
+            pool_name: cleanName,
             chain_name: market.chainName,
             chain_id: market.chainId,
             market_address: market.address,
@@ -267,7 +273,7 @@ Deno.serve(async (req) => {
                 previous_value: prevImplied,
                 current_value: impliedApy,
                 change_percent: impliedChange * 100, // Keep sign for direction
-                pool_name: market.name,
+                pool_name: cleanName,
                 chain_name: market.chainName,
                 chain_id: market.chainId,
                 market_address: market.address,
@@ -287,7 +293,7 @@ Deno.serve(async (req) => {
                 previous_value: prevUnderlying,
                 current_value: underlyingApy,
                 change_percent: underlyingChange * 100, // Keep sign for direction
-                pool_name: market.name,
+                pool_name: cleanName,
                 chain_name: market.chainName,
                 chain_id: market.chainId,
                 market_address: market.address,
@@ -317,7 +323,7 @@ Deno.serve(async (req) => {
               previous_value: impliedApy,
               current_value: underlyingApy,
               change_percent: ((underlyingApy - impliedApy) / impliedApy) * 100,
-              pool_name: market.name,
+              pool_name: cleanName,
               chain_name: market.chainName,
               chain_id: market.chainId,
               market_address: market.address,
@@ -369,8 +375,15 @@ Deno.serve(async (req) => {
              const curr = (alert.current_value * 100).toFixed(2);
              const chainSlug = CHAIN_SLUGS[alert.chain_id] || 'ethereum';
              const url = `https://app.pendle.finance/trade/markets/${alert.market_address}?chain=${chainSlug}`;
-             const linkName = `<a href="${url}">${alert.underlying_symbol}</a>`;
-             const marketName = alert.pool_name.replace('PT ', '');
+             
+             let assetName = alert.pool_name.replace(/\[.*?\]\s*/g, '').replace(/^PT\s+/i, '');
+             if (assetName === 'PENDLE-LPT') assetName = alert.underlying_symbol;
+             
+             const linkName = `<a href="${url}">${assetName}</a>`;
+             
+             // Extract expiry if possible (not perfectly available here for previous alerts, but we can try)
+             // Or format nicely:
+             let platformStr = alert.chain_name ? `[Pendle | ${alert.chain_name}]` : `[Pendle]`;
 
              if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
                  const currValue = (alert.current_value * 100).toFixed(2);
@@ -384,17 +397,17 @@ Deno.serve(async (req) => {
                      continue;
                  }
                  
-                 message += `🔸 <b>${linkName}</b> (${marketName} @ ${alert.chain_name})\n`;
+                 message += `🔸 <b>${linkName}</b> ${platformStr}\n`;
                  message += `Implied APY: ${prev}% ➡️ ${currValue}%\n`;
                  message += `Underlying APY: ${underlyingValue}%\n\n`;
                  hasAlertToSend = true;
              } else if (alert.alert_type === 'underlying_spike' && Math.abs(alert.change_percent) >= Number(user.underlying_apy_threshold_percent)) {
-                 message += `🔹 <b>${linkName}</b> (${alert.chain_name})\nUnderlying APY: ${prev}% ➡️ ${curr}%\n\n`;
+                 message += `🔹 <b>${linkName}</b> ${platformStr}\nUnderlying APY: ${prev}% ➡️ ${curr}%\n\n`;
                  hasAlertToSend = true;
              } else if (alert.alert_type === 'yield_divergence') {
-                 message += `⚠️ <b>Разрыв доходности: ${linkName}</b> (${alert.chain_name})\nUnderlying (${curr}%) сильно превышает Implied (${prev}%)\n\n`;
+                 message += `⚠️ <b>Разрыв доходности: ${linkName}</b> ${platformStr}\nUnderlying (${curr}%) сильно превышает Implied (${prev}%)\n\n`;
              } else if (alert.alert_type === 'new_market') {
-                 message += `💠 <b>Новый пул на Pendle:</b>\n${linkName} (${alert.chain_name})\nНачальный Implied APY: ${curr}%\n\n`;
+                 message += `💠 <b>Новый пул на Pendle:</b>\n${linkName} ${platformStr}\nНачальный Implied APY: ${curr}%\n\n`;
                  hasAlertToSend = true;
              }
           }

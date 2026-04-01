@@ -284,11 +284,11 @@ Deno.serve(async (req) => {
         if (!prevRate) {
           alerts.push({
             pool_id: poolId,
-            alert_type: 'yield_divergence',
-            previous_value: impliedApy,
-            current_value: impliedApy * 0.9, // Assuming underlyingApy is impliedApy * 0.9
-            change_percent: (impliedApy - (impliedApy * 0.9)) / impliedApy * 100, // Assuming divergence calculation
-            pool_name: pool.name,
+            alert_type: 'new_market',
+            previous_value: 0,
+            current_value: impliedApy,
+            change_percent: 0,
+            pool_name: tokenName,
             chain_name: chainName, // Using chainName from current scope
             chain_id: chainId // Using chainId from current scope
           });
