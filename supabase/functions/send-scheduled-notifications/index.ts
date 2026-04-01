@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
       try {
         let alertsQuery = supabase
           .from('pendle_alerts')
-          .select('pool_name, alert_type, change_percent, current_value, platform, created_at, pendle_pools(chain_id, expiry, underlying_asset, name)')
+          .select('pool_id, pool_name, alert_type, change_percent, current_value, previous_value, platform, created_at, pendle_pools(chain_id, expiry, underlying_asset, name)')
           .eq('status', 'new')
           .order('created_at', { ascending: false })
           .limit(5);
@@ -107,8 +107,32 @@ Deno.serve(async (req) => {
           alertsQuery = alertsQuery.in('platform', platforms);
         }
 
-        const { data: alerts, error: alertsError } = await alertsQuery;
-        if (!alertsError && alerts) recentAlerts = alerts;
+        const { data: alertsData, error: alertsError } = await alertsQuery;
+        if (!alertsError && alertsData) {
+          recentAlerts = alertsData;
+          
+          // Fetch underlying_apy for these pools
+          const poolIds = recentAlerts.map(a => a.pool_id).filter(id => id);
+          if (poolIds.length > 0) {
+             const { data: rates } = await supabase
+               .from('pendle_rates_history')
+               .select('pool_id, underlying_apy')
+               .in('pool_id', poolIds)
+               .order('recorded_at', { ascending: false });
+               
+             const rateMap = new Map();
+             if (rates) {
+                 for (const r of rates) {
+                     if (!rateMap.has(r.pool_id)) rateMap.set(r.pool_id, r);
+                 }
+             }
+             for (const a of recentAlerts) {
+                 if (a.pool_id && rateMap.has(a.pool_id)) {
+                     a.underlying_apy = rateMap.get(a.pool_id).underlying_apy;
+                 }
+             }
+          }
+        }
         else if (alertsError) console.warn('[Scheduler] alerts query error:', alertsError.message);
       } catch (e) {
         console.warn('[Scheduler] alerts fetch failed:', e);
@@ -163,8 +187,15 @@ Deno.serve(async (req) => {
         text += `🔔 <b>Актуальные алерты:</b>\n`;
         for (const alert of recentAlerts) {
           const sign = alert.change_percent >= 0 ? '▲' : '▼';
-          const pct = Math.abs(Number(alert.change_percent)).toFixed(2);
           const apy = (Number(alert.current_value) * 100).toFixed(2);
+          const prevApy = (Number(alert.previous_value || 0) * 100).toFixed(2);
+          
+          let metricStr = '';
+          if (alert.alert_type === 'implied_spike') metricStr = 'Implied APY';
+          else if (alert.alert_type === 'underlying_spike') metricStr = 'Underlying APY';
+          else if (alert.alert_type === 'yield_divergence') metricStr = 'Разрыв APY';
+          else if (alert.alert_type === 'new_market') metricStr = 'Новый пул';
+          else metricStr = 'APY';
           
           let platformClean = alert.platform || 'Yield';
           let chainName = alert.pendle_pools?.chain_id ? (CHAIN_NAMES[alert.pendle_pools.chain_id] || '') : (platformClean === 'RateX' ? 'Solana' : '');
@@ -184,7 +215,15 @@ Deno.serve(async (req) => {
             expiryStr = ` (до ${expDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })})`;
           }
           
-          text += `${sign} ${platformStr} <b>${assetName}</b>${expiryStr}: <b>${apy}%</b> (${sign}${pct}%)\n`;
+          let underlyingInfo = '';
+          if (alert.alert_type === 'implied_spike' && alert.underlying_apy !== undefined) {
+             const under = (Number(alert.underlying_apy) * 100).toFixed(2);
+             underlyingInfo = ` | Und: ${under}%`;
+          }
+          
+          const changeStr = alert.alert_type === 'new_market' ? `(создан)` : `(было ${prevApy}%)`;
+
+          text += `${sign} ${platformStr} <b>${assetName}</b>${expiryStr}: <b>${metricStr} ${apy}%</b> ${changeStr}${underlyingInfo}\n`;
         }
         text += '\n';
       } else {
