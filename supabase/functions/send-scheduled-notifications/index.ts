@@ -29,6 +29,12 @@ function formatInterval(minutes: number): string {
   return `${Math.round(minutes / 60)} ч`;
 }
 
+// Check if a column exists in a table by trying to select it
+async function columnExists(table: string, column: string): Promise<boolean> {
+  const { error } = await supabase.from(table).select(column).limit(1);
+  return !error;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -36,6 +42,11 @@ Deno.serve(async (req) => {
 
   try {
     console.log('[Scheduler] Starting periodic notification run...');
+
+    // Detect if platform column exists (migration might not be applied yet)
+    const alertsHasPlatform = await columnExists('pendle_alerts', 'platform');
+    const poolsHasPlatform = await columnExists('pendle_pools', 'platform');
+    console.log(`[Scheduler] Schema: alerts.platform=${alertsHasPlatform}, pools.platform=${poolsHasPlatform}`);
 
     // Fetch active users who have a connected Telegram and whose interval has elapsed
     const { data: users, error } = await supabase
@@ -69,54 +80,92 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Fetch recent alerts for this user (platforms filter)
       const platforms: string[] = user.platforms ?? ['Pendle', 'Spectra', 'Exponent', 'RateX'];
 
-      let recentAlertsQuery = supabase
-        .from('pendle_alerts')
-        .select('pool_name, alert_type, change_percent, current_value, created_at')
-        .in('platform', platforms)
-        .eq('status', 'new')
-        .order('created_at', { ascending: false })
-        .limit(5);
+      // Fetch recent alerts — handle missing platform column gracefully
+      let recentAlerts: any[] = [];
+      try {
+        let alertsQuery = supabase
+          .from('pendle_alerts')
+          .select('pool_name, alert_type, change_percent, current_value, platform, created_at')
+          .eq('status', 'new')
+          .order('created_at', { ascending: false })
+          .limit(5);
 
-      if (lastNotified) {
-        recentAlertsQuery = recentAlertsQuery.gt('created_at', lastNotified.toISOString());
+        if (lastNotified) {
+          alertsQuery = alertsQuery.gt('created_at', lastNotified.toISOString());
+        }
+
+        // Only filter by platform if column exists
+        if (alertsHasPlatform) {
+          alertsQuery = alertsQuery.in('platform', platforms);
+        }
+
+        const { data: alerts, error: alertsError } = await alertsQuery;
+        if (!alertsError && alerts) recentAlerts = alerts;
+        else if (alertsError) console.warn('[Scheduler] alerts query error:', alertsError.message);
+      } catch (e) {
+        console.warn('[Scheduler] alerts fetch failed:', e);
       }
 
-      const { data: recentAlerts } = await recentAlertsQuery;
+      // Fetch top pools — join with pendle_rates_history for live APY
+      let topPools: any[] = [];
+      try {
+        // Get pools with latest rate from history
+        const { data: pools } = await supabase
+          .from('pendle_pools')
+          .select(`id, name, ${poolsHasPlatform ? 'platform,' : ''} pendle_rates_history!inner(implied_apy, recorded_at)`)
+          .order('pendle_rates_history.recorded_at', { ascending: false })
+          .limit(20);
 
-      // Fetch top pools summary
-      const { data: topPools } = await supabase
-        .from('pendle_pools')
-        .select('name, implied_apy, underlying_apy, platform')
-        .in('platform', platforms)
-        .order('implied_apy', { ascending: false })
-        .limit(5);
+        if (pools) {
+          // Deduplicate by pool id and sort by implied_apy
+          const seen = new Set<string>();
+          for (const p of pools) {
+            if (seen.has(p.id)) continue;
+            seen.add(p.id);
+            const pl = p.platform || (
+              p.name?.includes('[Spectra]') ? 'Spectra' :
+              p.name?.includes('[RateX]') ? 'RateX' :
+              p.name?.includes('[Exponent]') ? 'Exponent' : 'Pendle'
+            );
+            const hist = Array.isArray(p.pendle_rates_history) ? p.pendle_rates_history[0] : (p.pendle_rates_history as any);
+            if (platforms.includes(pl) && hist?.implied_apy > 0) {
+              topPools.push({ name: p.name, platform: pl, implied_apy: hist.implied_apy });
+            }
+          }
+          topPools.sort((a, b) => b.implied_apy - a.implied_apy);
+          topPools = topPools.slice(0, 5);
+        }
+      } catch (e) {
+        console.warn('[Scheduler] top pools fetch failed:', e);
+      }
 
       // Build notification text
       const intervalLabel = formatInterval(user.notification_interval_minutes ?? 60);
       let text = `📊 <b>YieldMonitor — плановое обновление</b>\n`;
       text += `<i>Интервал: каждые ${intervalLabel}</i>\n\n`;
 
-      if (recentAlerts && recentAlerts.length > 0) {
+      if (recentAlerts.length > 0) {
         text += `🔔 <b>Актуальные алерты:</b>\n`;
         for (const alert of recentAlerts) {
           const sign = alert.change_percent >= 0 ? '▲' : '▼';
           const pct = Math.abs(Number(alert.change_percent)).toFixed(2);
           const apy = (Number(alert.current_value) * 100).toFixed(2);
-          text += `${sign} ${alert.pool_name}: <b>${apy}%</b> (${sign}${pct}%)\n`;
+          const poolLabel = alert.pool_name || 'Unknown';
+          text += `${sign} ${poolLabel}: <b>${apy}%</b> (${sign}${pct}%)\n`;
         }
         text += '\n';
       } else {
         text += `✅ <b>Алертов нет</b> — рынок стабилен.\n\n`;
       }
 
-      if (topPools && topPools.length > 0) {
+      if (topPools.length > 0) {
         text += `🏆 <b>Топ пулы по Implied APY:</b>\n`;
         for (const pool of topPools) {
           const implied = (Number(pool.implied_apy) * 100).toFixed(2);
-          text += `• ${pool.name}: <b>${implied}%</b>\n`;
+          const pl = pool.platform ? ` [${pool.platform}]` : '';
+          text += `• ${pool.name}${pl}: <b>${implied}%</b>\n`;
         }
       }
 

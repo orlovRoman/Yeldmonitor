@@ -67,12 +67,13 @@ export const SystemHealthDialog = () => {
             setProgress((i / platforms.length) * 100);
 
             // 1. Check Database Freshness
+            // Filter by name pattern (works even if platform column doesn't exist yet)
             let query = supabase.from('pendle_pools').select('updated_at', { count: 'exact' });
 
             if (p === 'spectra') query = query.ilike('name', '%[Spectra]%');
             else if (p === 'exponent') query = query.ilike('name', '%[Exponent]%');
             else if (p === 'ratex') query = query.ilike('name', '%[RateX]%');
-            else query = query.not('name', 'ilike', '%[%'); // Pendle is default
+            else query = query.not('name', 'ilike', '%[%'); // Pendle has no prefix
 
             const { data, count, error: dbError } = await query
                 .order('updated_at', { ascending: false })
@@ -85,7 +86,7 @@ export const SystemHealthDialog = () => {
             else {
                 const hoursSinceUpdate = (Date.now() - lastUpdate.getTime()) / (1000 * 60 * 60);
                 if (hoursSinceUpdate > 24) dbStatus = 'error';
-                else if (hoursSinceUpdate > 4) dbStatus = 'warning';
+                else if (hoursSinceUpdate > 2) dbStatus = 'warning';
             }
 
             setStatuses(prev => ({
