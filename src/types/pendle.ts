@@ -25,7 +25,7 @@ export interface PendleRateHistory {
 export interface PendleAlert {
   id: string;
   pool_id: string;
-  alert_type: 'implied_spike' | 'underlying_spike' | 'yield_divergence';
+  alert_type: 'implied_spike' | 'underlying_spike' | 'yield_divergence' | 'new_market';
   previous_value: number;
   current_value: number;
   change_percent: number;
@@ -170,6 +170,9 @@ export const getAlertTypeLabel = (alertType: string, changePercent: number | nul
   if (alertType === 'yield_divergence') {
     return 'Расхождение Implied vs Underlying';
   }
+  if (alertType === 'new_market') {
+    return 'Новый пул';
+  }
   const direction = changePercent !== null ? getDirectionLabel(changePercent) : 'Изменение';
   const base = ALERT_TYPE_LABELS_BASE[alertType] || alertType;
   return `${direction} ${base}`;
@@ -186,10 +189,12 @@ export const ALERT_PARAM_LABELS: Record<string, { before: string; after: string 
   'implied_spike': { before: 'Implied APY (было)', after: 'Implied APY (стало)' },
   'underlying_spike': { before: 'Underlying APY (было)', after: 'Underlying APY (стало)' },
   'yield_divergence': { before: 'Implied APY', after: 'Underlying APY' },
+  'new_market': { before: 'Было', after: 'Начальный APY' },
 };
 
 export const ALERT_TYPE_DESCRIPTIONS: Record<string, string> = {
   'implied_spike': 'Резкое изменение implied APY более чем на 20%',
   'underlying_spike': 'Резкое изменение underlying APY более чем на 20%',
   'yield_divergence': 'Фактическая доходность превышает подразумеваемую на 20%+',
+  'new_market': 'Обнаружен абсолютно новый рынок на платформе',
 };

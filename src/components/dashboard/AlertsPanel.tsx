@@ -180,12 +180,14 @@ export function AlertsPanel({ platformFilter = 'all' }: { platformFilter?: Platf
                         <Badge
                           variant="outline"
                           className={
-                            Number(alert.change_percent) > 0
+                            alert.alert_type === 'new_market'
+                              ? 'border-blue-500 text-blue-500'
+                              : Number(alert.change_percent) > 0
                               ? 'border-success text-success'
                               : 'border-destructive text-destructive'
                           }
                         >
-                          {formatChange(alert.change_percent)}
+                          {alert.alert_type === 'new_market' ? `+${(Number(alert.current_value) * 100).toFixed(1)}%` : formatChange(alert.change_percent)}
                         </Badge>
                       </div>
                     </div>
@@ -323,10 +325,13 @@ export function AlertsPanel({ platformFilter = 'all' }: { platformFilter?: Platf
                 <div className="p-4 rounded-lg bg-muted text-center">
                   <p className="text-sm text-muted-foreground">Изменение</p>
                   <p
-                    className={`text-2xl font-bold mt-1 tabular-nums ${Number(selectedAlert.change_percent) > 0 ? 'text-success' : 'text-destructive'
+                    className={`text-2xl font-bold mt-1 tabular-nums ${
+                      selectedAlert.alert_type === 'new_market'
+                        ? 'text-blue-500'
+                        : Number(selectedAlert.change_percent) > 0 ? 'text-success' : 'text-destructive'
                       }`}
                   >
-                    {formatChange(selectedAlert.change_percent)}
+                    {selectedAlert.alert_type === 'new_market' ? `+${(Number(selectedAlert.current_value) * 100).toFixed(1)}%` : formatChange(selectedAlert.change_percent)}
                   </p>
                 </div>
               </div>
