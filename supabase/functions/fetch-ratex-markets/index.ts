@@ -9,7 +9,19 @@ const corsHeaders = {
 
 const RATEX_API_URL = 'https://api.rate-x.io/';
 
-
+async function notifyTelegram(chatId: number, message: string) {
+  const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
+  if (!TELEGRAM_BOT_TOKEN) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' }),
+    });
+  } catch (e) {
+    console.error('Telegram send error:', e);
+  }
+}
 
 // Threshold for price change alerts (20%)
 const PRICE_CHANGE_THRESHOLD = 0.20;
@@ -367,17 +379,23 @@ Deno.serve(async (req) => {
                     .limit(1)
                     .single();
 
-                // Insert new rate snapshot into unified history
-                await supabase
-                    .from('pendle_rates_history')
-                    .insert({
-                        pool_id: poolId,
-                        implied_apy: currentImpliedApy,
-                        underlying_apy: currentUnderlyingApy,
-                        liquidity: liquidityFromStats,
-                        volume_24h: 0,
-                        // yield_exposure stored as extra_data if column exists
-                    });
+                const prevImplied = prevRate ? Number(prevRate.implied_apy) : 0;
+                const apyDiff = Math.abs(currentImpliedApy - prevImplied);
+                const liqDiff = Math.abs((prevRate?.liquidity || 0) - liquidityFromStats);
+
+                // Insert new rate snapshot into unified history only if changed significantly
+                if (!prevRate || apyDiff > 0.001 || liqDiff > 1) {
+                    await supabase
+                        .from('pendle_rates_history')
+                        .insert({
+                            pool_id: poolId,
+                            implied_apy: currentImpliedApy,
+                            underlying_apy: currentUnderlyingApy,
+                            liquidity: liquidityFromStats,
+                            volume_24h: 0,
+                            // yield_exposure stored as extra_data if column exists
+                        });
+                }
 
                 // Update yield_exposure in pendle_pools for leverage display
                 if (yieldExposure > 0) {
@@ -454,6 +472,51 @@ Deno.serve(async (req) => {
                     platform: 'RateX',
                     pool_name: alert.pool_name,
                 });
+        }
+
+        // 6. Send Telegram notifications
+        if (alerts.length > 0) {
+            const { data: users } = await supabase
+                .from('user_telegram_settings')
+                .select('*')
+                .eq('is_active', true);
+                
+            if (users && users.length > 0) {
+                for (const user of users) {
+                    if (user.platforms && !user.platforms.includes('RateX')) continue;
+
+                    let message = `🚨 <b>YieldMonitor: Изменения на RateX</b>\n\n`;
+                    let hasAlertToSend = false;
+
+                    for (const alert of alerts) {
+                        const prev = (alert.previous_value * 100).toFixed(2);
+                        const curr = (alert.current_value * 100).toFixed(2);
+                        const url = 'https://app.rate-x.io/earn';
+                        const linkName = `<a href="${url}">${alert.underlying_symbol || alert.pool_name}</a>`;
+                        
+                        if (alert.alert_type === 'implied_spike' && Math.abs(alert.change_percent) >= Number(user.implied_apy_threshold_percent)) {
+                                const underlyingValue = ((alert.underlying_apy || 0) * 100).toFixed(2);
+                                
+                                const isIncrease = alert.change_percent > 0;
+                                const notifyImpliedIncrease = user.notify_implied_increase !== false; // true по умолчанию
+                                
+                                if (isIncrease && !notifyImpliedIncrease) continue;
+                                
+                                message += `🔸 <b>${linkName}</b> [RateX | Solana]\n`;
+                                message += `RateX APY: ${prev}% ➡️ ${curr}%\n`;
+                                message += `Underlying APY: ${underlyingValue}%\n\n`;
+                                hasAlertToSend = true;
+                        } else if (alert.alert_type === 'new_market') {
+                            message += `💠 <b>Новый пул на RateX:</b>\n${linkName} [RateX | Solana]\nНачальный APY: ${curr}%\n\n`;
+                            hasAlertToSend = true;
+                        }
+                    }
+
+                    if (hasAlertToSend && user.telegram_chat_id) {
+                        await notifyTelegram(user.telegram_chat_id, message);
+                    }
+                }
+            }
         }
 
 
